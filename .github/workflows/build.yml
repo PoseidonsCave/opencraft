@@ -26,7 +26,7 @@ jobs:
 
       - run: chmod +x ./gradlew
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build & Test
         run: ./gradlew build test
@@ -73,7 +73,7 @@ jobs:
           distribution: temurin
 
       - run: chmod +x ./gradlew
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: SpotBugs / checkstyle
         run: ./gradlew check -x test || true
@@ -108,7 +108,7 @@ jobs:
           distribution: temurin
 
       - run: chmod +x ./gradlew
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: OWASP Dependency-Check
         run: ./gradlew dependencyCheckAnalyze --info || true
