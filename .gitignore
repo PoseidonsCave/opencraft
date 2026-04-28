@@ -31,6 +31,8 @@ application-local.*
 # ZenithProxy runtime data
 config/
 logs/
+.codex
+.codex/
 
 # OWASP Dependency Check reports
 dependency-check-report*
