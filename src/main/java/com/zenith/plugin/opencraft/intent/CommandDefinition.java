@@ -8,8 +8,8 @@ import java.util.Map;
 /**
  * Immutable definition of one allowed admin command.
  * Constructed from com.zenith.plugin.opencraft.OpenCraftConfig.AllowedCommandConfig.
- * Only #commandId() and #description() are ever exposed to the LLM;
- * all other fields are Java-side only.
+ * Only commandId and description are exposed to the LLM.
+ * Everything else stays Java-side.
  */
 public record CommandDefinition(
     /** Unique ID the LLM must return verbatim. */

@@ -29,6 +29,7 @@ import com.zenith.plugin.opencraft.ratelimit.RateLimiter;
 import com.zenith.plugin.opencraft.ratelimit.RateLimitResult;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import org.jspecify.annotations.Nullable;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatPacket;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -151,11 +152,11 @@ public final class ChatHandler {
         // ── Special keywords: confirm / cancel ────────────────────────────
         final Optional<UserIdentity> identityOpt = authService.resolve(uuid, username);
         if (identityOpt.isPresent() && "confirm".equalsIgnoreCase(userInput)) {
-            handleConfirm(identityOpt.get(), username, requestId);
+            handleConfirm(identityOpt.get(), username, requestId, sourceType);
             return;
         }
         if (identityOpt.isPresent() && "cancel".equalsIgnoreCase(userInput)) {
-            handleCancel(identityOpt.get(), username, requestId);
+            handleCancel(identityOpt.get(), username, requestId, sourceType);
             return;
         }
 
@@ -176,7 +177,7 @@ public final class ChatHandler {
         final RateLimitResult rateResult = rateLimiter.check(rateKey);
         if (!rateResult.allowed()) {
             auditLogger.log(AuditEvent.rateLimited(requestId, identity, rateResult.reason()));
-            whisper(username, config.responsePrefix + " " + rateResult.reason());
+            respond(username, rateResult.reason(), sourceType);
             return;
         }
 
@@ -184,7 +185,7 @@ public final class ChatHandler {
 
         // ── Dispatch to executor ──────────────────────────────────────────
         if (!rateLimiter.acquireConcurrencySlot()) {
-            whisper(username, config.responsePrefix + " The assistant is busy. Please try again shortly.");
+            respond(username, "The assistant is busy. Please try again shortly.", sourceType);
             return;
         }
 
@@ -215,7 +216,7 @@ public final class ChatHandler {
             logger.warn("[OpenCraft] req={} Provider error: {}", requestId, e.getMessage());
             auditLogger.log(AuditEvent.providerError(requestId, identity, e.getMessage()));
             discordNotifier.notifyProviderError(requestId, identity, e.getMessage());
-            whisper(identity.username(), config.responsePrefix + " The assistant is temporarily unavailable.");
+            respond(identity.username(), "The assistant is temporarily unavailable.", sourceType);
             return;
         }
 
@@ -227,20 +228,20 @@ public final class ChatHandler {
             final String content = plain.content();
             auditLogger.log(AuditEvent.responseSent(requestId, identity, content, provider.name()));
             discordNotifier.notifyResponseSent(requestId, identity, content);
-            chunkWhisper(identity.username(), content);
+            chunkResponse(identity.username(), content, sourceType);
             return;
         }
 
         if (parsed instanceof CommandIntentResponse commandIntent) {
             final ExecutionResult result =
                 commandExecutor.execute(commandIntent.intent(), identity, requestId);
-            whisper(identity.username(), result.message());
+            respond(identity.username(), result.message(), sourceType);
             return;
         }
 
         if (parsed instanceof PlanResponse planResponse) {
             if (!config.operationsEnabled) {
-                whisper(identity.username(), config.responsePrefix + " Operations are not enabled.");
+                respond(identity.username(), "Operations are not enabled.", sourceType);
                 return;
             }
             final OperationalPlan plan = planResponse.plan();
@@ -249,13 +250,13 @@ public final class ChatHandler {
                 ? " (estimated token cost: " + plan.costEstimate() + ")" : "";
             if (plan.requiresApproval()) {
                 operationExecutor.stagePlan(plan, identity);
-                whisper(identity.username(), config.responsePrefix + " Plan: " + plan.summary()
-                    + costWarning + " — Reply 'confirm' to proceed or 'cancel' to abort.");
+                chunkResponse(identity.username(), "Plan: " + plan.summary()
+                    + costWarning + " — Reply 'confirm' to proceed or 'cancel' to abort.", sourceType);
             } else {
-                whisper(identity.username(), config.responsePrefix + " Executing: " + plan.summary()
-                    + costWarning);
+                chunkResponse(identity.username(), "Executing: " + plan.summary()
+                    + costWarning, sourceType);
                 operationExecutor.startOperation(plan, identity, requestId,
-                    msg -> whisper(identity.username(), config.responsePrefix + " " + msg));
+                    msg -> respond(identity.username(), msg, sourceType));
             }
             auditLogger.log(AuditEvent.operationStarted(requestId, identity,
                 plan.steps().size(), plan.risk()));
@@ -264,45 +265,53 @@ public final class ChatHandler {
 
         if (parsed instanceof RefusalResponse refusal) {
             auditLogger.log(AuditEvent.requestDenied(requestId, identity.username(), refusal.reason()));
-            chunkWhisper(identity.username(), refusal.reason());
+            chunkResponse(identity.username(), refusal.reason(), sourceType);
             return;
         }
 
         if (parsed instanceof ClarificationResponse clarification) {
-            chunkWhisper(identity.username(), clarification.message());
+            chunkResponse(identity.username(), clarification.message(), sourceType);
         }
     }
 
     // ── Confirm / Cancel ──────────────────────────────────────────────────────
 
     private void handleConfirm(final UserIdentity identity, final String username,
-                                 final String requestId) {
+                                 final String requestId, final String sourceType) {
         // Check for a staged multi-step operation first
         if (config.operationsEnabled && operationExecutor.hasStagedPlan(identity)) {
-            operationExecutor.startStagedOperation(identity, requestId,
-                msg -> whisper(username, config.responsePrefix + " " + msg));
+            final String result = operationExecutor.startStagedOperation(identity, requestId,
+                msg -> respond(username, msg, sourceType));
+            if (result != null) {
+                respond(username, result, sourceType);
+            }
+            return;
+        }
+        if (config.operationsEnabled && operationExecutor.isAwaitingStepConfirmation(identity)) {
+            final String result = operationExecutor.confirmStep(identity, requestId,
+                msg -> respond(username, msg, sourceType));
+            if (result != null) {
+                respond(username, result, sourceType);
+            }
             return;
         }
         if (!commandExecutor.hasPendingConfirmation(identity)) {
-            whisper(username, config.responsePrefix + " No pending command to confirm.");
+            respond(username, "No pending command to confirm.", sourceType);
             return;
         }
         final ExecutionResult result = commandExecutor.confirm(identity, requestId);
-        whisper(username, result.message());
+        respond(username, result.message(), sourceType);
     }
 
     private void handleCancel(final UserIdentity identity, final String username,
-                                final String requestId) {
-        boolean cancelled = false;
-        if (config.operationsEnabled) {
-            operationExecutor.cancelOperation(identity);
-            cancelled = true;
-        }
+                                final String requestId, final String sourceType) {
+        final boolean stagedCancelled = config.operationsEnabled && operationExecutor.clearStagedPlan(identity);
+        final boolean operationCancelled = config.operationsEnabled && operationExecutor.cancelOperation(identity);
         final boolean cmdCancelled = commandExecutor.cancel(identity);
-        if (cancelled || cmdCancelled) {
-            whisper(username, config.responsePrefix + " Cancelled.");
+        if (stagedCancelled || operationCancelled || cmdCancelled) {
+            respond(username, "Cancelled.", sourceType);
         } else {
-            whisper(username, config.responsePrefix + " Nothing to cancel.");
+            respond(username, "Nothing to cancel.", sourceType);
         }
     }
 
@@ -311,18 +320,18 @@ public final class ChatHandler {
     /**
      * Send a whisper to the player, chunked into safe lengths.
      */
-    private void chunkWhisper(final String username, final String message) {
+    private void chunkResponse(final String username, final String message, final String sourceType) {
         if (message == null || message.isBlank()) return;
-        final String full = config.responsePrefix + " " + message;
+        final String full = ensureResponsePrefix(message);
         final int chunkSize = config.whisperChunkSize;
 
         if (full.length() <= chunkSize) {
-            whisper(username, full);
+            sendChat(username, full, sourceType);
             return;
         }
 
         // Split into chunks, adding part numbers
-        final String body = message;
+        final String body = stripResponsePrefix(full);
         int partStart = 0;
         int part = 1;
         final int approxParts = (int) Math.ceil((double) body.length() / (chunkSize - 20));
@@ -331,9 +340,21 @@ public final class ChatHandler {
             final int end = Math.min(partStart + chunkSize - 25, body.length());
             final String chunk = config.responsePrefix + " (" + part + "/" + approxParts + ") "
                 + body.substring(partStart, end);
-            whisper(username, chunk);
+            sendChat(username, chunk, sourceType);
             partStart = end;
             part++;
+        }
+    }
+
+    private void respond(final String username, final String message, final String sourceType) {
+        sendChat(username, ensureResponsePrefix(message), sourceType);
+    }
+
+    private void sendChat(final String username, final String message, final String sourceType) {
+        if (isPublicSource(sourceType)) {
+            publicChat(message);
+        } else {
+            whisper(username, message);
         }
     }
 
@@ -350,6 +371,20 @@ public final class ChatHandler {
             client.sendAsync(ChatUtil.getWhisperChatPacket(username, safe));
         } catch (final Exception e) {
             logger.warn("[OpenCraft] Failed to send whisper to {}: {}", username, e.getMessage());
+        }
+    }
+
+    private void publicChat(final String message) {
+        try {
+            final var client = Proxy.getInstance().getClient();
+            if (client == null) {
+                logger.debug("[OpenCraft] No active client; dropping public chat response.");
+                return;
+            }
+            final String safe = ChatUtil.sanitizeChatMessage(message.replaceAll("[\r\n]", " ").strip());
+            client.sendAsync(new ServerboundChatPacket(safe));
+        } catch (final Exception e) {
+            logger.warn("[OpenCraft] Failed to send public chat response: {}", e.getMessage());
         }
     }
 
@@ -384,6 +419,30 @@ public final class ChatHandler {
 
     private static boolean isSafeUsername(final String s) {
         return s != null && SAFE_USERNAME.matcher(s).matches();
+    }
+
+    private static boolean isPublicSource(final String sourceType) {
+        return "public_chat".equals(sourceType);
+    }
+
+    private String ensureResponsePrefix(final String message) {
+        final String normalized = message == null ? "" : message.strip();
+        if (normalized.isBlank()) {
+            return config.responsePrefix;
+        }
+        return normalized.startsWith(config.responsePrefix)
+            ? normalized
+            : config.responsePrefix + " " + normalized;
+    }
+
+    private String stripResponsePrefix(final String message) {
+        final String marker = config.responsePrefix + " ";
+        if (message.equals(config.responsePrefix)) {
+            return "";
+        }
+        return message.startsWith(marker)
+            ? message.substring(marker.length())
+            : message;
     }
 
     private static String stripColorCodes(final String s) {

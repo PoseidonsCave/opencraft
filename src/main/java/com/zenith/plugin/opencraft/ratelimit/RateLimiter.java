@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *   - Global requests-per-minute cap.
  * 
  *
- * Daily budget tracking is handled externally via #recordTokens(int).
+ * Daily budget tracking uses recordTokens().
  */
 public final class RateLimiter {
 

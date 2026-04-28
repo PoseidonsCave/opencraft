@@ -48,7 +48,7 @@ public final class OperationExecutor {
     private final ComponentLogger   logger;
 
     private final ConcurrentHashMap<UUID, ActiveOperation> activeOps  = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<UUID, OperationalPlan> stagedPlans = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, StagedOperation> stagedPlans = new ConcurrentHashMap<>();
 
     public OperationExecutor(
         final OpenCraftConfig config,
@@ -70,11 +70,14 @@ public final class OperationExecutor {
      */
     public void stagePlan(final OperationalPlan plan, final UserIdentity identity) {
         if (identity.uuid() == null) return;
-        stagedPlans.put(identity.uuid(), plan);
+        final Instant expiresAt = Instant.now().plusSeconds(
+            Math.max(1, config.operationConfirmationTimeoutSeconds)
+        );
+        stagedPlans.put(identity.uuid(), new StagedOperation(plan, expiresAt));
     }
 
     public boolean hasStagedPlan(final UserIdentity identity) {
-        return identity.uuid() != null && stagedPlans.containsKey(identity.uuid());
+        return getStagedPlan(identity) != null;
     }
 
     public boolean clearStagedPlan(final UserIdentity identity) {
@@ -92,9 +95,12 @@ public final class OperationExecutor {
         final Consumer<String> whisperFn
     ) {
         if (identity.uuid() == null) return null;
-        final OperationalPlan plan = stagedPlans.remove(identity.uuid());
-        if (plan == null) return null;
-        return startOperation(plan, identity, requestId, whisperFn);
+        final StagedOperation staged = stagedPlans.remove(identity.uuid());
+        if (staged == null) return null;
+        if (staged.isExpired()) {
+            return "Operation confirmation expired. Please re-submit the request.";
+        }
+        return startOperation(staged.plan(), identity, requestId, whisperFn);
     }
 
     // ── Execution ─────────────────────────────────────────────────────────
@@ -156,6 +162,50 @@ public final class OperationExecutor {
         return identity.uuid() != null && activeOps.containsKey(identity.uuid());
     }
 
+    public boolean isAwaitingStepConfirmation(final UserIdentity identity) {
+        if (identity.uuid() == null) return false;
+        final ActiveOperation op = activeOps.get(identity.uuid());
+        return op != null && op.awaitingStepConfirmation;
+    }
+
+    public String confirmStep(
+        final UserIdentity identity,
+        final String requestId,
+        final Consumer<String> whisperFn
+    ) {
+        if (identity.uuid() == null) return null;
+        final ActiveOperation op = activeOps.get(identity.uuid());
+        if (op == null || !op.awaitingStepConfirmation) {
+            return null;
+        }
+
+        final int stepIndex = op.currentStep.get();
+        if (stepIndex >= op.plan.steps().size()) {
+            activeOps.remove(identity.uuid());
+            return "No pending operation step to confirm.";
+        }
+
+        final var step = op.plan.steps().get(stepIndex);
+        final ExecutionResult result = commandExecutor.confirm(identity, requestId);
+        op.awaitingStepConfirmation = false;
+        whisperFn.accept(result.message());
+
+        if (result.status() == ExecutionResult.Status.SUCCESS) {
+            op.currentStep.incrementAndGet();
+            if (step.commandId().startsWith(PATHFINDER_PREFIX) && !step.commandId().equals("pathfinder.stop")) {
+                schedulePathfinderPoll(op);
+            } else {
+                executeNextStep(op);
+            }
+            return null;
+        }
+
+        activeOps.remove(identity.uuid());
+        auditLogger.log(AuditEvent.operationFailed(op.requestId, op.identity,
+            step.commandId(), result.message()));
+        return null;
+    }
+
     // ── Internal execution loop ────────────────────────────────────────────
 
     private void executeNextStep(final ActiveOperation op) {
@@ -194,7 +244,7 @@ public final class OperationExecutor {
 
         if (result.needsConfirmation()) {
             // High-risk single-step within a plan — pause for sub-confirmation
-            activeOps.remove(op.identity.uuid());
+            op.awaitingStepConfirmation = true;
             op.whisperFn.accept("[OC] Operation paused at step " + (stepIndex + 1)
                 + " — awaiting confirmation: " + result.message());
             return;
@@ -249,7 +299,24 @@ public final class OperationExecutor {
         op.setPollFuture(futureRef[0]);
     }
 
+    private StagedOperation getStagedPlan(final UserIdentity identity) {
+        if (identity.uuid() == null) return null;
+        final StagedOperation staged = stagedPlans.get(identity.uuid());
+        if (staged == null) return null;
+        if (!staged.isExpired()) {
+            return staged;
+        }
+        stagedPlans.remove(identity.uuid(), staged);
+        return null;
+    }
+
     // ── Inner types ────────────────────────────────────────────────────────
+
+    private record StagedOperation(OperationalPlan plan, Instant expiresAt) {
+        boolean isExpired() {
+            return Instant.now().isAfter(expiresAt);
+        }
+    }
 
     private static final class ActiveOperation {
         final OperationalPlan   plan;
@@ -257,6 +324,7 @@ public final class OperationExecutor {
         final String            requestId;
         final Consumer<String>  whisperFn;
         final AtomicInteger     currentStep = new AtomicInteger(0);
+        volatile boolean        awaitingStepConfirmation;
         private volatile ScheduledFuture<?> pollFuture;
 
         ActiveOperation(

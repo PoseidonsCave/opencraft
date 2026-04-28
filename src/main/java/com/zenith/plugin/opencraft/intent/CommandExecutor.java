@@ -116,8 +116,8 @@ public final class CommandExecutor {
 
             return ExecutionResult.needsConfirmation(pending,
                 "[OC] High-risk command: " + def.description() + ". " +
-                "Reply '!gpt confirm' within " + Math.max(5, config.confirmationTimeoutSeconds) +
-                " seconds to proceed, or '!gpt cancel'.");
+                "Reply '" + config.prefix + " confirm' within " + Math.max(5, config.confirmationTimeoutSeconds) +
+                " seconds to proceed, or '" + config.prefix + " cancel'.");
         }
 
         // ── 6. Execute ────────────────────────────────────────────────────────

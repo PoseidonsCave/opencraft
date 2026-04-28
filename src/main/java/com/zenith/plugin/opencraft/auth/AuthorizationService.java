@@ -20,8 +20,7 @@ import java.util.regex.Pattern;
  *       admin role is NEVER granted through username-only resolution.
  * 
  *
- * Non-whitelisted users always receive Optional#empty(), and the
- * caller is responsible for silently ignoring the request.
+ * Non-whitelisted users return empty, and the caller ignores the request.
  */
 public final class AuthorizationService {
 

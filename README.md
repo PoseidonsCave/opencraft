@@ -1,23 +1,22 @@
 # OpenCraft
 
-A ZenithProxy plugin that bridges OpenAI-compatible LLMs into Minecraft chat. Whitelisted players ask questions via whisper or public chat using a configurable prefix; admins may optionally delegate a deny-by-default set of ZenithProxy commands to the LLM with strict argument validation and high-risk confirmation gates.
+OpenCraft adds a chat-based AI assistant to ZenithProxy. Approved players can ask questions in-game with a simple prefix such as `!oc`, and admins can optionally let the assistant trigger a tightly controlled set of ZenithProxy commands on their behalf.
 
-OpenCraft reuses ZenithProxy's existing infrastructure wherever possible: the operator command bus, Discord bot, scheduled executor, logback rolling appenders, account-owner authorization, and tab-list cache. The plugin owns only what it needs to (the LLM worker pool and the chat tap).
+The plugin is designed to be useful without being reckless: player access is allowlisted, admin actions are deny-by-default, high-risk requests require confirmation, and secrets stay out of config files and chat output.
 
 ---
 
 ## Features
 
-- LLM Q&A through whisper and (optionally) public chat
-- UUID-based identity and RBAC (`MEMBER` / `ADMIN`)
-- Deny-by-default admin command allowlist with JSON-schema argument validation
-- High-risk command confirmation gates with TTL expiry
-- Per-user cooldown + hourly cap, global RPM cap, fair concurrency semaphore
-- Optional daily token budget (UTC midnight reset)
-- Structured JSON-lines audit log on a logback `RollingFileAppender` (size + time, gz-compressed, retention-bounded)
-- Optional Discord audit notifications routed through ZenithProxy's existing Discord bot
-- Hardened system prompt (RBAC information hiding, prompt-injection resistance) backed by Java-side enforcement
-- SHA-256-verified GitHub release auto-update
+- In-game Q&A through whispers and, if enabled, public chat
+- Member/admin access control based on UUIDs
+- Deny-by-default admin command allowlist
+- Per-command typed argument validation before any proxy command is dispatched
+- Confirmation prompts for high-risk admin actions
+- Per-user, global, concurrency, and daily-budget rate limiting
+- Local audit logging with automatic rotation and retention
+- Optional Discord audit notifications through ZenithProxy's Discord integration
+- Optional GitHub release update checks with SHA-256 verification before staging
 
 ---
 
@@ -59,7 +58,7 @@ OpenCraft loads through the ZenithProxy plugin loader. On first run it generates
 
 ### 4. Configure users and (optionally) admin commands
 
-Use `/llm user ...` and `/llm allow ...` for day-to-day user and allowlist management. Edit `plugins/config/opencraft.json` directly only when you want to make bulk changes or modify advanced fields such as `systemPromptOverride`, argument schemas, or redact lists. See [Configuration](#configuration) below.
+Use `/llm user ...` and `/llm allow ...` for day-to-day user and allowlist management. Edit `plugins/config/opencraft.json` directly only when you want to make bulk changes or adjust advanced fields such as `systemPromptOverride`, argument schemas, or redact lists. See [Configuration](#configuration) below.
 
 ### Updates
 
@@ -82,10 +81,10 @@ The fields you'll touch most often:
 
 | Key | Default | Description |
 |---|---|---|
-| `prefix` | `"!gpt"` | Trigger prefix in chat |
+| `prefix` | `"!oc"` | Trigger prefix in chat |
 | `whisperEnabled` | `true` | Accept whispers as input |
 | `publicChatEnabled` | `false` | Accept public chat as input |
-| `responsePrefix` | `"[OC]"` | Prepended to outbound whispers |
+| `responsePrefix` | `"[OC]"` | Prepended to assistant replies |
 | `whisperChunkSize` | `190` | Max chars per whisper chunk (clamped to [10, 200]) |
 | `whisperInboundPattern` | `^(\S+) whispers to you: (.+)$` | Regex for inbound whisper detection |
 
@@ -156,8 +155,8 @@ Each entry in `allowedCommands` defines exactly one ZenithProxy command the LLM 
 Notes:
 
 - `commandId` is the only identifier ever exposed to the LLM. `zenithCommand` is the actual proxy command that gets dispatched and is **never** sent to the model.
-- `argumentSchema` types accepted by the validator: `string`, `integer`. Empty schema = no arguments accepted.
-- `confirmationRequired: true` makes the command wait for a `!gpt confirm` from the same admin within `confirmationTimeoutSeconds`.
+- `argumentSchema` is a simple per-argument type map. Supported validation types today are `string` and `integer`. Empty schema = no arguments accepted.
+- `confirmationRequired: true` makes the command wait for a `!oc confirm` from the same admin within `confirmationTimeoutSeconds`.
 - `redactFields` are stripped from the captured output before it reaches whispers, audit log, or Discord.
 
 For live operations, you can manage the basic allowlist without editing JSON directly:
@@ -217,6 +216,8 @@ This remains an advanced, developer-oriented setting on purpose. OpenCraft does 
 
 All `/llm` subcommands run through ZenithProxy's standard command bus, but OpenCraft restricts execution to Zenith `TERMINAL` and `DISCORD` sources only. In-game command sources are explicitly denied for `/llm` management. Every `/llm` subcommand requires ZenithProxy's canonical account-owner authorization.
 
+In short: players use `!oc ...` in chat, while the proxy owner manages OpenCraft through `/llm ...` from terminal or Discord.
+
 | Command | Auth | Description |
 |---|---|---|
 | `/llm status` | account owner | Module state, provider, model, prefix, update status |
@@ -243,15 +244,17 @@ Denied `/llm` management attempts are audited through the local audit log (`REQU
 
 ## End-User Guide
 
+This is the only part most players need:
+
 ### Asking a question
 
 Whisper the proxy account in-game:
 
 ```
-/w ZenithAccount !gpt What is the fastest way to the nether highway?
+/w ZenithAccount !oc What is the fastest way to the nether highway?
 ```
 
-The bot replies via whisper, chunking long answers into sequential `[OC] (1/2) ...` messages.
+The assistant replies in chat with the configured response prefix. Longer replies are split into multiple messages such as `[OC] (1/2) ...`.
 
 If `publicChatEnabled` is `true`, the same trigger works in public chat and the response goes back to public chat.
 
@@ -260,8 +263,8 @@ If `publicChatEnabled` is `true`, the same trigger works in public chat and the 
 If you are configured as `"admin"` and the operator has populated `allowedCommands`:
 
 ```
-> !gpt scan the stash
-< [OC] Done: stash.scan dispatched.
+> !oc scan the stash
+< [OC] Done: [command dispatched: stash.scan]
 ```
 
 The LLM picks the matching `commandId` from the allowlist; OpenCraft validates arguments against the schema, then dispatches the actual `zenithCommand` through Zenith's command bus attributed to `TERMINAL`.
@@ -271,19 +274,25 @@ The LLM picks the matching `commandId` from the allowlist; OpenCraft validates a
 For commands with `"confirmationRequired": true`:
 
 ```
-> !gpt clear all indexed stash data
-< [OC] High-risk command staged: stash.clearall. Reply '!gpt confirm' within 60s to proceed.
-> !gpt confirm
-< [OC] Done: stash.clearall dispatched.
+> !oc clear all indexed stash data
+< [OC] High-risk command: Clear all indexed stash data. Reply '!oc confirm' within 60 seconds to proceed, or '!oc cancel'.
+> !oc confirm
+< [OC] Done: [command dispatched: stash.clearall]
 ```
 
 To cancel:
 
 ```
-!gpt cancel
+!oc cancel
 ```
 
 Pending confirmations expire after `confirmationTimeoutSeconds`.
+
+### Multi-step operations
+
+If the operator enables `operationsEnabled`, the assistant can propose multi-step admin plans instead of only single commands. In that mode, admins may see a plan summary first and then reply with `!oc confirm` or `!oc cancel`.
+
+Operations are disabled by default, so most installs will not use this flow unless the operator turns it on intentionally.
 
 ### What the LLM will refuse
 

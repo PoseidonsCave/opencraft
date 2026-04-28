@@ -17,8 +17,8 @@ import java.util.Map;
 public class OpenCraftConfig {
 
     // ── Chat trigger ──────────────────────────────────────────────────────────
-    /** In-game prefix that triggers the LLM (e.g., "!gpt Hello"). */
-    public String prefix = "!gpt";
+    /** In-game prefix that triggers the LLM (e.g., "!oc Hello"). */
+    public String prefix = "!oc";
     /** Allow triggers from public chat. Disabled by default to reduce blast radius. */
     public boolean publicChatEnabled = false;
     /** Allow triggers from whisper/tell messages. */
@@ -30,8 +30,8 @@ public class OpenCraftConfig {
     public String responsePrefix = "[OC]";
     /** Maximum characters per whisper chunk (Minecraft limit is 256; keep below 200 for safety). */
     public int whisperChunkSize = 190;
-    /** Configurable regex pattern used to detect incoming whispers in system chat.
-     *  Default matches vanilla format: "<username> whispers to you: <message>" */
+    /** Regex used to detect incoming whispers in system chat.
+     *  Default matches the vanilla whisper format. */
     public String whisperInboundPattern = "^(\\S+) whispers to you: (.+)$";
 
     // ── LLM Provider ─────────────────────────────────────────────────────────

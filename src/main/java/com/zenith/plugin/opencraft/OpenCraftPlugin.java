@@ -86,8 +86,8 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
      */
     private static void validateConfig(final OpenCraftConfig cfg) {
         if (cfg.prefix == null || cfg.prefix.isBlank()) {
-            logger.warn("[OpenCraft] Config: 'prefix' was blank; falling back to '!gpt'.");
-            cfg.prefix = "!gpt";
+            logger.warn("[OpenCraft] Config: 'prefix' was blank; falling back to '!oc'.");
+            cfg.prefix = "!oc";
         }
         if (cfg.apiKeyEnvVar == null || cfg.apiKeyEnvVar.isBlank()) {
             logger.warn("[OpenCraft] Config: 'apiKeyEnvVar' was blank; falling back to 'OPENCRAFT_API_KEY'.");

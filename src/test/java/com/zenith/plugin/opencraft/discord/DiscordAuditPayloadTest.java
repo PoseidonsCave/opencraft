@@ -53,7 +53,7 @@ class DiscordAuditPayloadTest {
         final CommandIntent intent = new CommandIntent("stash.scan", Map.of(), "scan");
         final DiscordAuditPayload payload = DiscordAuditPayload.from(
             "req-1", "COMMAND_EXECUTED", ADMIN,
-            "whisper", "!gpt scan the stash", "Done",
+            "whisper", "!oc scan the stash", "Done",
             intent, "allowed", "dispatched", "openai"
         );
 

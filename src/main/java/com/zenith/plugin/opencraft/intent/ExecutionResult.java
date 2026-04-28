@@ -3,7 +3,7 @@ package com.zenith.plugin.opencraft.intent;
 import org.jspecify.annotations.Nullable;
 
 /**
- * Result of a CommandExecutor#execute or CommandExecutor#confirm call.
+ * Result returned by command execution or confirmation.
  */
 public record ExecutionResult(
     Status  status,
