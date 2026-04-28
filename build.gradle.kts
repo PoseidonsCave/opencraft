@@ -32,7 +32,7 @@ dependencies {
     zenithProxy("com.zenith:ZenithProxy:$mc-SNAPSHOT")
 
     // Test dependencies only — main code uses only ZenithProxy-bundled libs (Gson, SLF4J, etc.)
-    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation(platform("org.junit:junit-bom:6.0.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("org.mockito:mockito-core:5.14.2")
