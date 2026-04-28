@@ -1,0 +1,40 @@
+# Build outputs
+.gradle/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+out/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SECURITY
+# ──────────────────────────────────────────────────────────────────────────────
+*.env
+.env.*
+secrets.properties
+*-secrets.*
+*_secrets.*
+application-local.*
+*-credentials.*
+*_credentials.*
+*-secret.*
+*_secret.*
+
+# ZenithProxy runtime data
+config/
+logs/
+
+# OWASP Dependency Check reports
+dependency-check-report*
+
+# Test infrastructure (local-only)
+src/test/
+docs/

@@ -1,0 +1,468 @@
+package com.zenith.plugin.opencraft.command;
+
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.zenith.command.api.Command;
+import com.zenith.command.api.CommandCategory;
+import com.zenith.command.api.CommandContext;
+import com.zenith.command.api.CommandSources;
+import com.zenith.command.api.CommandUsage;
+import com.zenith.plugin.opencraft.OpenCraftConfig;
+import com.zenith.plugin.opencraft.OpenCraftModule;
+import com.zenith.plugin.opencraft.auth.UserRole;
+import com.zenith.plugin.opencraft.audit.AuditEvent;
+import com.zenith.plugin.opencraft.audit.AuditLogger;
+import com.zenith.plugin.opencraft.update.PluginUpdateService;
+import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
+
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.UUID;
+import java.util.List;
+import java.util.regex.Pattern;
+
+import static com.zenith.Globals.saveConfig;
+
+/**
+ * Operator command surface for /llm.
+ * Accept commands only from terminal or Discord.
+ * Require account-owner authorization for every subcommand.
+ */
+public class OpenCraftCommand extends Command {
+
+    private static final Pattern MC_USERNAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
+    private static final Pattern UUID_NO_DASHES = Pattern.compile("[0-9a-fA-F]{32}");
+
+    private final OpenCraftConfig     config;
+    private final OpenCraftModule     module;
+    private final PluginUpdateService updateService;
+    private final AuditLogger         auditLogger;
+    private final ComponentLogger     logger;
+
+    public OpenCraftCommand(final OpenCraftConfig config,
+                            final OpenCraftModule module,
+                            final PluginUpdateService updateService,
+                            final AuditLogger auditLogger,
+                            final ComponentLogger logger) {
+        this.config        = config;
+        this.module        = module;
+        this.updateService = updateService;
+        this.auditLogger   = auditLogger;
+        this.logger        = logger;
+    }
+
+    @Override
+    public CommandUsage commandUsage() {
+        return CommandUsage.builder()
+            .name("llm")
+            .category(CommandCategory.MODULE)
+            .description("OpenCraft — LLM assistant plugin management")
+            .usageLines(
+                "status",
+                "enable",
+                "disable",
+                "user list",
+                "user add <uuid-or-username> <member|admin>",
+                "user remove <uuid-or-username>",
+                "user promote <uuid>",
+                "user demote <uuid-or-username>",
+                "allow list",
+                "allow add <command_id> <role> <risk> <confirm:true|false> <description> -- <zenith_command>",
+                "allow remove <command_id>",
+                "update",
+                "update check",
+                "update stage",
+                "audit prune",
+                "config"
+            )
+            .build();
+    }
+
+    @Override
+    public LiteralArgumentBuilder<CommandContext> register() {
+        return command("llm")
+            .requires(this::validateManagementAccess)
+            .then(literal("status").executes(c -> {
+                c.getSource().getEmbed()
+                    .title("OpenCraft Status")
+                    .addField("Module enabled", String.valueOf(module.isEnabled()), true)
+                    .addField("Provider",       config.providerName,                true)
+                    .addField("Model",          config.model,                       true)
+                    .addField("Prefix",         config.prefix,                      true)
+                    .addField("Public chat",    String.valueOf(config.publicChatEnabled), true)
+                    .addField("Whisper input",  String.valueOf(config.whisperEnabled),    true)
+                    .addField("Update channel", config.updateChannel,               true)
+                    .addField("Update status",  String.valueOf(updateService.getStatus()), true);
+                return OK;
+            }))
+            .then(literal("enable")
+                .executes(c -> {
+                    module.setEnabled(true);
+                    c.getSource().getEmbed().title("OpenCraft").description("Module enabled.");
+                    return OK;
+                }))
+            .then(literal("disable")
+                .executes(c -> {
+                    module.setEnabled(false);
+                    c.getSource().getEmbed().title("OpenCraft").description("Module disabled.");
+                    return OK;
+                }))
+            .then(literal("user")
+                .then(literal("list").executes(c -> {
+                    final String description = renderUserList();
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Users")
+                        .description(description)
+                        .addField("Entries", String.valueOf(config.users.size()), true)
+                        .addField("Username fallback", String.valueOf(config.allowUsernameOnlyFallback), true);
+                    return OK;
+                }))
+                .then(literal("add")
+                    .then(argument("key", StringArgumentType.string())
+                        .then(argument("role", enumStrings("member", "admin"))
+                            .executes(c -> {
+                                final String rawKey = StringArgumentType.getString(c, "key");
+                                final String normalizedKey = normalizeUserKey(rawKey);
+                                if (normalizedKey == null) {
+                                    c.getSource().getEmbed()
+                                        .title("OpenCraft User Add")
+                                        .description("Key must be a dashed UUID, a 32-character UUID, or a Minecraft username.")
+                                        .errorColor();
+                                    return ERROR;
+                                }
+
+                                final UserRole role = UserRole.fromString(StringArgumentType.getString(c, "role"));
+                                if (role == UserRole.ADMIN && !isUuidKey(normalizedKey)) {
+                                    c.getSource().getEmbed()
+                                        .title("OpenCraft User Add")
+                                        .description("Admin access requires a UUID key. Username keys may only be members.")
+                                        .errorColor();
+                                    return ERROR;
+                                }
+
+                                config.users.put(normalizedKey, role.name().toLowerCase(Locale.ROOT));
+                                saveConfig();
+
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft User Added")
+                                    .addField("Key", normalizedKey, false)
+                                    .addField("Role", role.name().toLowerCase(Locale.ROOT), true)
+                                    .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+                                return OK;
+                            }))))
+                .then(literal("remove")
+                    .then(argument("key", StringArgumentType.string())
+                        .executes(c -> {
+                            final String rawKey = StringArgumentType.getString(c, "key");
+                            final String normalizedKey = normalizeUserKey(rawKey);
+                            final String keyToRemove = normalizedKey != null ? normalizedKey : rawKey;
+                            final String removed = config.users.remove(keyToRemove);
+
+                            if (removed == null) {
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft User Remove")
+                                    .description("No user entry found for: " + keyToRemove)
+                                    .errorColor();
+                                return ERROR;
+                            }
+
+                            saveConfig();
+                            c.getSource().getEmbed()
+                                .title("OpenCraft User Removed")
+                                .addField("Key", keyToRemove, false)
+                                .addField("Previous role", removed, true)
+                                .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+                            return OK;
+                        })))
+                .then(literal("promote")
+                    .then(argument("key", StringArgumentType.string())
+                        .executes((com.mojang.brigadier.context.CommandContext<CommandContext> c) ->
+                            updateUserRole(c, StringArgumentType.getString(c, "key"), UserRole.ADMIN))))
+                .then(literal("demote")
+                    .then(argument("key", StringArgumentType.string())
+                        .executes((com.mojang.brigadier.context.CommandContext<CommandContext> c) ->
+                            updateUserRole(c, StringArgumentType.getString(c, "key"), UserRole.MEMBER)))))
+            .then(literal("allow")
+                .then(literal("list").executes(c -> {
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Allowlist")
+                        .description(renderAllowList())
+                        .addField("Entries", String.valueOf(config.allowedCommands.size()), true);
+                    return OK;
+                }))
+                .then(literal("add")
+                    .then(argument("commandId", StringArgumentType.string())
+                        .then(argument("role", enumStrings("admin", "member"))
+                            .then(argument("risk", enumStrings("low", "medium", "high"))
+                                .then(argument("confirm", enumStrings("true", "false"))
+                                    .then(argument("spec", StringArgumentType.greedyString())
+                                        .executes(c -> {
+                                            final String commandId = StringArgumentType.getString(c, "commandId").strip();
+                                            if (!isValidCommandId(commandId)) {
+                                                c.getSource().getEmbed()
+                                                    .title("OpenCraft Allow Add")
+                                                    .description("command_id must contain only letters, digits, '.', '_', or '-'.")
+                                                    .errorColor();
+                                                return ERROR;
+                                            }
+                                            if (findAllowedCommand(commandId) != null) {
+                                                c.getSource().getEmbed()
+                                                    .title("OpenCraft Allow Add")
+                                                    .description("An allowlist entry already exists for: " + commandId)
+                                                    .errorColor();
+                                                return ERROR;
+                                            }
+
+                                            final String role = StringArgumentType.getString(c, "role").strip().toLowerCase(Locale.ROOT);
+                                            final String risk = StringArgumentType.getString(c, "risk").strip().toLowerCase(Locale.ROOT);
+                                            final boolean confirm = Boolean.parseBoolean(StringArgumentType.getString(c, "confirm"));
+                                            final String spec = StringArgumentType.getString(c, "spec");
+                                            final String[] split = spec.split("\\s+--\\s+", 2);
+                                            if (split.length != 2 || split[0].isBlank() || split[1].isBlank()) {
+                                                c.getSource().getEmbed()
+                                                    .title("OpenCraft Allow Add")
+                                                    .description("Use: /llm allow add <command_id> <role> <risk> <confirm:true|false> <description> -- <zenith_command>")
+                                                    .errorColor();
+                                                return ERROR;
+                                            }
+
+                                            final OpenCraftConfig.AllowedCommandConfig entry = new OpenCraftConfig.AllowedCommandConfig();
+                                            entry.commandId = commandId;
+                                            entry.description = split[0].strip();
+                                            entry.zenithCommand = split[1].strip();
+                                            entry.roleRequired = role;
+                                            entry.riskLevel = risk;
+                                            entry.confirmationRequired = confirm;
+                                            config.allowedCommands.add(entry);
+                                            saveConfig();
+
+                                            c.getSource().getEmbed()
+                                                .title("OpenCraft Allowlist Added")
+                                                .addField("command_id", entry.commandId, false)
+                                                .addField("role", entry.roleRequired, true)
+                                                .addField("risk", entry.riskLevel, true)
+                                                .addField("confirm", String.valueOf(entry.confirmationRequired), true)
+                                                .addField("description", entry.description, false)
+                                                .addField("zenithCommand", entry.zenithCommand, false)
+                                                .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+                                            return OK;
+                                        })))))))
+                .then(literal("remove")
+                    .then(argument("commandId", StringArgumentType.string())
+                        .executes(c -> {
+                            final String commandId = StringArgumentType.getString(c, "commandId").strip();
+                            final OpenCraftConfig.AllowedCommandConfig existing = findAllowedCommand(commandId);
+                            if (existing == null) {
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft Allow Remove")
+                                    .description("No allowlist entry found for: " + commandId)
+                                    .errorColor();
+                                return ERROR;
+                            }
+
+                            config.allowedCommands.remove(existing);
+                            saveConfig();
+                            c.getSource().getEmbed()
+                                .title("OpenCraft Allowlist Removed")
+                                .addField("command_id", existing.commandId, false)
+                                .addField("description", existing.description, false)
+                                .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+                            return OK;
+                        }))))
+            .then(literal("update")
+                .executes(c -> {
+                    final var result = updateService.checkForUpdates();
+                    c.getSource().getEmbed().title("OpenCraft Update").description(result.message());
+                    return OK;
+                })
+                .then(literal("check").executes(c -> {
+                    final var result = updateService.checkForUpdates();
+                    c.getSource().getEmbed().title("OpenCraft Update Check").description(result.message());
+                    return OK;
+                }))
+                .then(literal("stage").executes(c -> {
+                    final var result = updateService.checkAndStageUpdate();
+                    c.getSource().getEmbed().title("OpenCraft Update Stage").description(result.message());
+                    return OK;
+                }))
+            )
+            .then(literal("audit")
+                .then(literal("prune").executes(c -> {
+                    auditLogger.pruneOldEntries();
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Audit")
+                        .description("Audit log pruning scheduled (entries older than "
+                            + config.auditRetentionDays + " days).");
+                    return OK;
+                }))
+            )
+            .then(literal("config").executes(c -> {
+                c.getSource().getEmbed()
+                    .title("OpenCraft Config")
+                    .addField("prefix",              config.prefix,                                     true)
+                    .addField("publicChatEnabled",   String.valueOf(config.publicChatEnabled),          true)
+                    .addField("whisperEnabled",      String.valueOf(config.whisperEnabled),             true)
+                    .addField("model",               config.model,                                      true)
+                    .addField("providerName",        config.providerName,                               true)
+                    .addField("providerBaseUrl",     config.providerBaseUrl,                            false)
+                    .addField("apiKeyEnvVar",        config.apiKeyEnvVar + " (value hidden)",           false)
+                    .addField("userCooldownMs",      String.valueOf(config.userCooldownMs),             true)
+                    .addField("userHourlyLimit",     String.valueOf(config.userHourlyLimit),            true)
+                    .addField("allowedCommands",     config.allowedCommands.size() + " entries",        true)
+                    .addField("discordAuditEnabled", String.valueOf(config.discordAuditEnabled),        true)
+                    .addField("users",               config.users.size() + " entries",                  true);
+                return OK;
+            }));
+    }
+
+    private boolean validateManagementAccess(final CommandContext context) {
+        if (!validateCommandSource(context, List.of(CommandSources.TERMINAL, CommandSources.DISCORD))) {
+            auditDeniedManagementAttempt(context, "Command source is not allowed for /llm management");
+            return false;
+        }
+        if (!validateAccountOwner(context)) {
+            auditDeniedManagementAttempt(context, "Not authorized: account owner role required");
+            return false;
+        }
+        return true;
+    }
+
+    private void auditDeniedManagementAttempt(final CommandContext context, final String reason) {
+        try {
+            final String sourceName = context.getSource() == null ? "unknown" : context.getSource().name();
+            final String requestId = "mgmt-" + UUID.randomUUID().toString().substring(0, 8);
+            auditLogger.log(AuditEvent.requestDenied(requestId, sourceName, reason));
+            logger.warn("[OpenCraft] Denied /llm management command from source={} reason={}", sourceName, reason);
+        } catch (final Exception ignored) {
+            // never fail command processing on audit path
+        }
+    }
+
+    private String renderUserList() {
+        if (config.users.isEmpty()) {
+            return "No users configured.";
+        }
+
+        final StringBuilder builder = new StringBuilder();
+        for (final Map.Entry<String, String> entry : new TreeMap<>(config.users).entrySet()) {
+            if (builder.length() > 0) builder.append('\n');
+            builder.append(entry.getKey()).append(" -> ").append(entry.getValue());
+        }
+        return builder.toString();
+    }
+
+    private String renderAllowList() {
+        if (config.allowedCommands.isEmpty()) {
+            return "No allowlist entries configured.";
+        }
+
+        final StringBuilder builder = new StringBuilder();
+        for (final OpenCraftConfig.AllowedCommandConfig entry : config.allowedCommands.stream()
+            .sorted((left, right) -> left.commandId.compareToIgnoreCase(right.commandId))
+            .toList()) {
+            if (builder.length() > 0) builder.append('\n');
+            builder.append(entry.commandId)
+                .append(" -> ")
+                .append(entry.roleRequired)
+                .append(" / ")
+                .append(entry.riskLevel)
+                .append(" / confirm=")
+                .append(entry.confirmationRequired);
+        }
+        return builder.toString();
+    }
+
+    private int updateUserRole(final com.mojang.brigadier.context.CommandContext<CommandContext> context,
+                               final String rawKey,
+                               final UserRole targetRole) {
+        final String normalizedKey = normalizeUserKey(rawKey);
+        if (normalizedKey == null) {
+            context.getSource().getEmbed()
+                .title("OpenCraft User Update")
+                .description("Key must be a dashed UUID, a 32-character UUID, or a Minecraft username.")
+                .errorColor();
+            return ERROR;
+        }
+        if (targetRole == UserRole.ADMIN && !isUuidKey(normalizedKey)) {
+            context.getSource().getEmbed()
+                .title("OpenCraft User Update")
+                .description("Admin access requires a UUID key. Username keys may only be members.")
+                .errorColor();
+            return ERROR;
+        }
+
+        final String previousRole = config.users.get(normalizedKey);
+        if (previousRole == null) {
+            context.getSource().getEmbed()
+                .title("OpenCraft User Update")
+                .description("No user entry found for: " + normalizedKey)
+                .errorColor();
+            return ERROR;
+        }
+
+        final String newRole = targetRole.name().toLowerCase(Locale.ROOT);
+        config.users.put(normalizedKey, newRole);
+        saveConfig();
+
+        context.getSource().getEmbed()
+            .title("OpenCraft User Updated")
+            .addField("Key", normalizedKey, false)
+            .addField("Previous role", previousRole, true)
+            .addField("New role", newRole, true)
+            .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+        return OK;
+    }
+
+    private OpenCraftConfig.AllowedCommandConfig findAllowedCommand(final String commandId) {
+        for (final OpenCraftConfig.AllowedCommandConfig entry : config.allowedCommands) {
+            if (entry.commandId.equals(commandId)) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private static boolean isValidCommandId(final String commandId) {
+        if (commandId == null || commandId.isBlank()) {
+            return false;
+        }
+        for (int index = 0; index < commandId.length(); index++) {
+            final char ch = commandId.charAt(index);
+            final boolean valid = Character.isLetterOrDigit(ch) || ch == '.' || ch == '_' || ch == '-';
+            if (!valid) return false;
+        }
+        return true;
+    }
+
+    private static boolean isUuidKey(final String key) {
+        try {
+            UUID.fromString(key);
+            return true;
+        } catch (final IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private static String normalizeUserKey(final String rawKey) {
+        final String key = rawKey == null ? "" : rawKey.strip();
+        if (key.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(key).toString();
+        } catch (final IllegalArgumentException ignored) {
+            // fall through
+        }
+
+        if (UUID_NO_DASHES.matcher(key).matches()) {
+            final String dashed = key.replaceFirst(
+                "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})",
+                "$1-$2-$3-$4-$5"
+            );
+            return UUID.fromString(dashed).toString();
+        }
+
+        return MC_USERNAME.matcher(key).matches() ? key : null;
+    }
+}

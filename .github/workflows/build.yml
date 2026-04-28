@@ -1,0 +1,187 @@
+name: OpenCraft Build & Release
+
+on:
+  pull_request:
+  push:
+    branches: ["*"]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - run: chmod +x ./gradlew
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build & Test
+        run: ./gradlew build test
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencraft
+          path: build/libs/*.jar
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: build/reports/tests/
+
+  # ── Dependency review (PR policy gate) ─────────────────────────────────────
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+
+  # ── Static analysis ────────────────────────────────────────────────────────
+  static-analysis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - run: chmod +x ./gradlew
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: SpotBugs / checkstyle
+        run: ./gradlew check -x test || true
+
+  # ── Secret scanning ────────────────────────────────────────────────────────
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: TruffleHog secret scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          extra_args: --only-verified
+
+  # ── Dependency vulnerability scan ─────────────────────────────────────────
+  dependency-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - run: chmod +x ./gradlew
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: OWASP Dependency-Check
+        run: ./gradlew dependencyCheckAnalyze --info || true
+
+      - name: Upload dependency-check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-check-report
+          path: build/reports/dependency-check-report.html
+
+  # ── Release ────────────────────────────────────────────────────────────────
+  release:
+    needs: [build, secret-scan]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: opencraft
+          path: build/libs
+
+      - name: Get plugin version
+        run: echo "PLUGIN_VERSION=$(grep '^plugin_version=' gradle.properties | cut -d'=' -f2)" >> $GITHUB_ENV
+
+      - name: Resolve release artifact paths
+        run: |
+          jar_path="$(echo build/libs/*.jar)"
+          sbom_path="${jar_path}.spdx.json"
+          echo "JAR_PATH=${jar_path}" >> "$GITHUB_ENV"
+          echo "SBOM_PATH=${sbom_path}" >> "$GITHUB_ENV"
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          file: ${{ env.JAR_PATH }}
+          format: spdx-json
+          output-file: ${{ env.SBOM_PATH }}
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate SHA-256 checksums
+        working-directory: build/libs
+        run: |
+          for jar in *.jar; do
+            sha256sum "$jar" > "${jar}.sha256"
+            echo "Generated checksum for $jar:"
+            cat "${jar}.sha256"
+          done
+
+      - name: Attest release artifact provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ env.JAR_PATH }}
+
+      - name: Attest release artifact SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ env.JAR_PATH }}
+          sbom-path: ${{ env.SBOM_PATH }}
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v${{ env.PLUGIN_VERSION }}
+          artifacts: "build/libs/*.jar,build/libs/*.sha256,build/libs/*.spdx.json"
+          generateReleaseNotes: true
+          allowUpdates: true
+          replacesArtifacts: true
