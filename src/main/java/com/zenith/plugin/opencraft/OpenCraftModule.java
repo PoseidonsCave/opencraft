@@ -15,9 +15,6 @@ import org.geysermc.mcprotocollib.protocol.packet.ingame.clientbound.Clientbound
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Subscribe to inbound Minecraft chat packets and forward them to ChatHandler.
- */
 public class OpenCraftModule extends Module {
 
     private final OpenCraftConfig config;
@@ -32,8 +29,7 @@ public class OpenCraftModule extends Module {
         this.logger      = logger;
     }
 
-    /** Keep this module enabled by default; operators can toggle it with /llm. */
-    @Override
+        @Override
     public boolean enabledSetting() {
         return true;
     }
@@ -55,9 +51,6 @@ public class OpenCraftModule extends Module {
             .build();
     }
 
-    // ── Inbound observers ─────────────────────────────────────────────────────
-    // Handlers return the packet unchanged (read-only tap).
-
     private record PlayerChatTap(ChatHandler chatHandler)
         implements PacketHandler<ClientboundPlayerChatPacket, ClientSession> {
         @Override
@@ -66,7 +59,6 @@ public class OpenCraftModule extends Module {
             try {
                 chatHandler.onPlayerChat(packet.getSender(), packet.getContent());
             } catch (final Exception ignored) {
-                // never block the network thread on plugin errors
             }
             return packet;
         }
@@ -80,7 +72,6 @@ public class OpenCraftModule extends Module {
             try {
                 chatHandler.onSystemChat(packet.getContent());
             } catch (final Exception ignored) {
-                // never block the network thread on plugin errors
             }
             return packet;
         }

@@ -12,11 +12,6 @@ import java.util.concurrent.Executor;
 
 import static com.zenith.Globals.EXECUTOR;
 
-/**
- * Sends optional OpenCraft audit notifications through ZenithProxy's Discord bot.
- * Sanitize payloads and never emit secrets.
- * Send asynchronously so Discord failures do not block chat flow.
- */
 public final class DiscordNotifier {
 
     private final OpenCraftConfig config;
@@ -26,12 +21,8 @@ public final class DiscordNotifier {
     public DiscordNotifier(final OpenCraftConfig config, final ComponentLogger logger) {
         this.config   = config;
         this.logger   = logger;
-        // Use ZenithProxy's shared scheduled executor so we don't spawn another
-        // plugin-owned thread just to fire-and-forget Discord embeds.
         this.executor = EXECUTOR;
     }
-
-    // ── Public notification methods ───────────────────────────────────────────
 
     public void notifyPromptReceived(final String requestId, final UserIdentity identity,
                                      final String promptExcerpt, final String sourceType) {
@@ -84,8 +75,6 @@ public final class DiscordNotifier {
             null, null, null, null, "failed", reason, config.providerName));
     }
 
-    // ── Internal send logic ───────────────────────────────────────────────────
-
     private void send(final DiscordAuditPayload payload) {
         executor.execute(() -> {
             if (!isZenithDiscordAvailable()) {
@@ -96,7 +85,6 @@ public final class DiscordNotifier {
             try {
                 com.zenith.Globals.DISCORD.sendEmbedMessage(buildDiscordEmbed(payload));
             } catch (final Exception e) {
-                // Failures are logged but never propagate to the LLM pipeline
                 logger.warn("[OpenCraft] Discord notification failed: {}", e.getMessage());
             }
         });

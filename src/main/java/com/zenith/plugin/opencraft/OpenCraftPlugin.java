@@ -78,13 +78,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
             config.publicChatEnabled, config.whisperEnabled);
     }
 
-    // ── Static accessors (used by tests and subcomponents) ─────────────────
-
-    /**
-     * Soft validation: clamp obviously bad values and warn rather than throwing.
-     * The plugin should never refuse to load over a recoverable config issue.
-     */
-    private static void validateConfig(final OpenCraftConfig cfg) {
+        private static void validateConfig(final OpenCraftConfig cfg) {
         if (cfg.prefix == null || cfg.prefix.isBlank()) {
             logger.warn("[OpenCraft] Config: 'prefix' was blank; falling back to '!oc'.");
             cfg.prefix = "!oc";
@@ -108,8 +102,6 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
             logger.warn("[OpenCraft] Config: 'timeoutSeconds'={} < 1; clamping to 30.", cfg.timeoutSeconds);
             cfg.timeoutSeconds = 30;
         }
-        // Warn (don't crash) if the API key env var is absent at load time;
-        // the provider will fail with a clear message at the first actual call.
         if (System.getenv(cfg.apiKeyEnvVar) == null) {
             logger.warn("[OpenCraft] WARNING: Environment variable '{}' is not set. " +
                 "The plugin will fail on the first LLM request.", cfg.apiKeyEnvVar);

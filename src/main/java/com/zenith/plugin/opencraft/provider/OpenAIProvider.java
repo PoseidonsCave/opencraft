@@ -13,11 +13,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 
-/**
- * OpenAI-compatible chat completions provider.
- * Use this for OpenAI-compatible endpoints that expose POST /chat/completions.
- * Read API keys from env on each call. Never log or cache secrets.
- */
 public final class OpenAIProvider implements OpenCraftProvider {
 
     private static final String COMPLETIONS_PATH = "/chat/completions";
@@ -38,7 +33,6 @@ public final class OpenAIProvider implements OpenCraftProvider {
 
     @Override
     public OpenCraftResponse complete(final OpenCraftRequest request) throws OpenCraftProviderException {
-        // ── Resolve API key from environment — NEVER from a stored field ──────
         final String apiKey = System.getenv(config.apiKeyEnvVar());
         if (apiKey == null || apiKey.isBlank()) {
             throw new OpenCraftProviderException(
@@ -65,18 +59,14 @@ public final class OpenAIProvider implements OpenCraftProvider {
             try {
                 final HttpResponse<String> resp =
                     httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-
-                // Provider rate limit — retry with back-off
                 if (resp.statusCode() == 429 && attempt < config.maxRetries()) {
                     sleepForRetry(++attempt);
                     continue;
                 }
-                // Transient server error — retry
                 if (resp.statusCode() >= 500 && attempt < config.maxRetries()) {
                     sleepForRetry(++attempt);
                     continue;
                 }
-                // Auth / client error — do not retry; log status only (not body)
                 if (resp.statusCode() == 401 || resp.statusCode() == 403) {
                     logger.warn("[OpenCraft] Provider auth failure (HTTP {}). " +
                         "Check that '{}' is set correctly.", resp.statusCode(), config.apiKeyEnvVar());

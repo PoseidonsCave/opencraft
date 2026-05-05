@@ -65,14 +65,11 @@ class CommandAllowlistTest {
         final var tools = list.getAdminToolDescriptions();
         assertEquals(1, tools.size());
         assertEquals("stash.scan", tools.get(0).commandId());
-        // Verify zenithCommand is NOT exposed through tool descriptions
-        // (AdminToolDescription only has commandId, description, argumentSchema)
         assertTrue(tools.get(0).description().startsWith("desc-"));
     }
 
     @Test
     void denyByDefault_inventedCommandId_notFound() {
-        // Ensure an LLM-invented command ID can never match a real command
         final CommandAllowlist list = new CommandAllowlist(configWith("stash.scan"));
         assertFalse(list.find("execute_shell_command").isPresent());
         assertFalse(list.find("stash.scan ").isPresent()); // trailing space

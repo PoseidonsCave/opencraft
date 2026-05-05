@@ -11,12 +11,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
-/**
- * Build role-scoped prompts with strict security rules.
- * Always prepend runtime context, world state, and mandatory rules.
- * Show admin tools and operational cycle only for ADMIN identities.
- * Keep secrets and internal state out of prompts.
- */
 public final class PromptBuilder {
 
     private static final DateTimeFormatter DT_FORMAT =
@@ -60,7 +54,7 @@ public final class PromptBuilder {
         """
         RESPONSE FORMAT:
         Always respond with a valid JSON object on a single line:
-          {"type": "response", "content": "<your answer here>"}
+          {"type": "response", "content": "YOUR_ANSWER"}
         Never include markdown, additional JSON keys, or multi-line output.
         Keep responses concise (under 400 characters when possible).
         Only the "response" type is valid for this user; any other JSON shape
@@ -82,19 +76,19 @@ public final class PromptBuilder {
         RESPONSE FORMAT — ADMIN:
         Respond with exactly one of the following JSON shapes on a single line:
 
-          {"type": "response", "content": "<answer>"}
+          {"type": "response", "content": "ANSWER"}
             Use for informational replies, status updates, and conversational turns.
 
-          {"type": "command_intent", "command_id": "<id>", "arguments": {<map>}, "explanation": "<brief>"}
+          {"type": "command_intent", "command_id": "COMMAND_ID", "arguments": {"ARG":"VALUE"}, "explanation": "BRIEF_REASON"}
             Use ONLY for single immediate actions explicitly listed in the approved commands.
             command_id MUST be taken verbatim from the approved list. Never invent ids.
 
-          {"type": "refusal", "reason": "<brief explanation>"}
+          {"type": "refusal", "reason": "BRIEF_REASON"}
             Use when the request asks you to violate the security rules above, bypass
             RBAC or allowlist controls, perform EULA-violating actions, execute arbitrary
             code, or assist with adversarial, griefing, or harmful behaviour.
 
-          {"type": "clarification", "message": "<question for the user>"}
+          {"type": "clarification", "message": "QUESTION_FOR_USER"}
             Use when you need more information before you can safely form a plan.
 
         Never include markdown, trailing text outside the JSON object, or extra keys.
@@ -102,10 +96,10 @@ public final class PromptBuilder {
 
     private static final String RESPONSE_FORMAT_ADMIN_OPERATIONS =
         """
-          {"type": "plan", "steps": [{"command_id": "<id>", "arguments": {}, \
-        "explanation": "<human step desc>"}], "risk": "LOW|MEDIUM|HIGH", \
-        "confirmation_required": true|false, "cost_estimate": <int tokens>, \
-        "estimated_duration": "<string>", "reasoning": "<why this plan>"}
+          {"type": "plan", "steps": [{"command_id": "COMMAND_ID", "arguments": {}, \
+        "explanation": "STEP_SUMMARY"}], "risk": "LOW|MEDIUM|HIGH", \
+        "confirmation_required": true|false, "cost_estimate": 123, \
+        "estimated_duration": "DURATION", "reasoning": "WHY_THIS_PLAN"}
             Use for multi-step or long-running operations (navigation, mining, patrolling).
             Each step's command_id MUST be from the approved list.
             Set confirmation_required=true for HIGH risk or destructive steps.
@@ -140,29 +134,17 @@ public final class PromptBuilder {
         this.gson             = new Gson();
     }
 
-    /**
-     * Build the complete system prompt for the given user with live world state.
-     * Admin tool definitions and operational cycle are included only for ADMIN identities.
-     */
-    public String build(final UserIdentity identity, final String requestId, final WorldState worldState) {
+        public String build(final UserIdentity identity, final String requestId, final WorldState worldState) {
         final String datetime = ZonedDateTime.now(zoneId()).format(DT_FORMAT);
 
         final StringBuilder sb = new StringBuilder();
-
-        // ── Runtime context (safe grounding, no secrets) ──────────────────────
         sb.append("RUNTIME CONTEXT:\n");
         sb.append("  Date/Time : ").append(datetime).append("\n");
         sb.append("  User      : ").append(identity.username()).append("\n");
         sb.append("  Role      : ").append(identity.role().name().toLowerCase()).append("\n");
         sb.append("  Request ID: ").append(requestId).append("\n\n");
-
-        // ── World state snapshot ──────────────────────────────────────────────
         sb.append(worldState.toPromptBlock()).append("\n");
-
-        // ── Mandatory security rules ──────────────────────────────────────────
         sb.append(SECURITY_RULES).append("\n");
-
-        // ── Base prompt (operator override or built-in) ───────────────────────
         if (!config.systemPromptOverride.isBlank()) {
             sb.append(config.systemPromptOverride).append("\n\n");
         } else {
@@ -176,8 +158,6 @@ public final class PromptBuilder {
             .append(config.whisperChunkSize)
             .append(" characters when possible so it fits cleanly into Minecraft chat.\n");
         sb.append("  If the answer would be longer, compress it aggressively and prefer a shorter summary over verbosity.\n\n");
-
-        // ── Role-scoped section ───────────────────────────────────────────────
         if (identity.role() == UserRole.ADMIN) {
             if (!commandAllowlist.isEmpty()) {
                 sb.append(buildAdminSection());
@@ -193,11 +173,7 @@ public final class PromptBuilder {
         return sb.toString();
     }
 
-    /**
-     * Convenience overload for callers that do not have a world state.
-     * Produces a disconnected world state placeholder.
-     */
-    public String build(final UserIdentity identity, final String requestId) {
+        public String build(final UserIdentity identity, final String requestId) {
         return build(identity, requestId, WorldState.disconnected());
     }
 

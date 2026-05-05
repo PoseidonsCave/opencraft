@@ -40,19 +40,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
-/**
- * Receives raw Minecraft chat events and orchestrates the full LLM pipeline:
- * observe → auth → rate limiting → prompt building → LLM call → response parsing
- * → (optional) command/plan execution → whisper delivery → audit/Discord logging.
- *
- * All LLM calls are dispatched to an off-thread executor to avoid blocking
- * the game network thread.
- */
 public final class ChatHandler {
 
     private static final int MAX_USERNAME_LEN = 16;
     private static final Pattern SAFE_USERNAME = Pattern.compile("[a-zA-Z0-9_]{1,16}");
-    private static final Pattern COLOR_CODE    = Pattern.compile("§[0-9a-fk-or]");
 
     private final OpenCraftConfig      config;
     private final AuthorizationService authService;
@@ -96,60 +87,49 @@ public final class ChatHandler {
         );
     }
 
-    // ── Entry points called by OpenCraftModule ─────────────────────────────────────
-
-    /**
-     * Handle a signed player chat packet. UUID is directly available and trusted.
-     */
-    public void onPlayerChat(final UUID senderUuid, final String rawMessage) {
-        if (!config.publicChatEnabled) return;
-        final String stripped = stripColorCodes(rawMessage);
+        public void onPlayerChat(final UUID senderUuid, final String rawMessage) {
+        final String stripped = ChatContentUtil.stripColorCodes(rawMessage);
         if (!stripped.startsWith(config.prefix)) return;
+        if (!config.publicChatEnabled) {
+            logger.debug("[OpenCraft] Ignored prefixed public chat because publicChatEnabled=false.");
+            return;
+        }
 
         final String userInput = stripped.substring(config.prefix.length()).strip();
-        // UUID is available; username is not — look it up from CACHE
         final String username = resolveUsername(senderUuid);
         handleRequest(senderUuid, username, userInput, "public_chat");
     }
 
-    /**
-     * Handle a system chat packet (whispers, server messages, etc.).
-     * UUID is not directly available; resolved via CACHE after username extraction.
-     */
-    public void onSystemChat(final Object formattedContent) {
+        public void onSystemChat(final Object formattedContent) {
         if (!config.whisperEnabled) return;
-        final String plain = extractPlainText(formattedContent);
+        final String plain = ChatContentUtil.extractPlainText(formattedContent);
         if (plain == null) return;
-
-        // Check whisper pattern
         final Matcher m = compileWhisperPattern(config.whisperInboundPattern).matcher(plain);
-        if (!m.matches()) return;
+        if (!m.matches()) {
+            if (plain.contains(config.prefix)) {
+                logger.debug("[OpenCraft] Ignored system chat containing prefix because it did not match whisperInboundPattern: {}",
+                    plain);
+            }
+            return;
+        }
         final String senderName = m.group(1);
         final String rawMessage = m.group(2);
 
         if (!rawMessage.startsWith(config.prefix)) return;
         final String userInput = rawMessage.substring(config.prefix.length()).strip();
-
-        // Try to resolve UUID from tab-list cache
         final UUID uuid = resolveUuidByUsername(senderName);
         handleRequest(uuid, senderName, userInput, "whisper");
     }
-
-    // ── Core pipeline ─────────────────────────────────────────────────────────
 
     private void handleRequest(@Nullable final UUID uuid,
                                 final String username,
                                 final String userInput,
                                 final String sourceType) {
         final String requestId = generateRequestId();
-
-        // ── Validate username format before using it ───────────────────────
         if (!isSafeUsername(username)) {
             logger.debug("[OpenCraft] req={} Rejected message with unsafe username.", requestId);
             return;
         }
-
-        // ── Special keywords: confirm / cancel ────────────────────────────
         final Optional<UserIdentity> identityOpt = authService.resolve(uuid, username);
         if (identityOpt.isPresent() && "confirm".equalsIgnoreCase(userInput)) {
             handleConfirm(identityOpt.get(), username, requestId, sourceType);
@@ -159,10 +139,7 @@ public final class ChatHandler {
             handleCancel(identityOpt.get(), username, requestId, sourceType);
             return;
         }
-
-        // ── Authorization check ────────────────────────────────────────────
         if (identityOpt.isEmpty()) {
-            // Not whitelisted — log silently, send no response
             if (config.logDeniedAttempts) {
                 auditLogger.log(AuditEvent.requestDenied(requestId, username, "Not whitelisted"));
                 discordNotifier.notifyDenied(requestId, null, "Not whitelisted");
@@ -172,8 +149,6 @@ public final class ChatHandler {
 
         final UserIdentity identity = identityOpt.get();
         final String rateKey = uuid != null ? uuid.toString() : username;
-
-        // ── Rate limit check ───────────────────────────────────────────────
         final RateLimitResult rateResult = rateLimiter.check(rateKey);
         if (!rateResult.allowed()) {
             auditLogger.log(AuditEvent.rateLimited(requestId, identity, rateResult.reason()));
@@ -182,8 +157,6 @@ public final class ChatHandler {
         }
 
         rateLimiter.recordRequest(rateKey);
-
-        // ── Dispatch to executor ──────────────────────────────────────────
         if (!rateLimiter.acquireConcurrencySlot()) {
             respond(username, "The assistant is busy. Please try again shortly.", sourceType);
             return;
@@ -274,11 +247,8 @@ public final class ChatHandler {
         }
     }
 
-    // ── Confirm / Cancel ──────────────────────────────────────────────────────
-
     private void handleConfirm(final UserIdentity identity, final String username,
                                  final String requestId, final String sourceType) {
-        // Check for a staged multi-step operation first
         if (config.operationsEnabled && operationExecutor.hasStagedPlan(identity)) {
             final String result = operationExecutor.startStagedOperation(identity, requestId,
                 msg -> respond(username, msg, sourceType));
@@ -315,12 +285,7 @@ public final class ChatHandler {
         }
     }
 
-    // ── Messaging helpers ─────────────────────────────────────────────────────
-
-    /**
-     * Send a whisper to the player, chunked into safe lengths.
-     */
-    private void chunkResponse(final String username, final String message, final String sourceType) {
+        private void chunkResponse(final String username, final String message, final String sourceType) {
         if (message == null || message.isBlank()) return;
         final String full = ensureResponsePrefix(message);
         final int chunkSize = config.whisperChunkSize;
@@ -329,8 +294,6 @@ public final class ChatHandler {
             sendChat(username, full, sourceType);
             return;
         }
-
-        // Split into chunks, adding part numbers
         final String body = stripResponsePrefix(full);
         int partStart = 0;
         int part = 1;
@@ -361,7 +324,6 @@ public final class ChatHandler {
     private void whisper(final String username, final String message) {
         if (!isSafeUsername(username)) return;
         try {
-            // Ensure no newlines or injection into the chat command
             final String safe = message.replaceAll("[\r\n]", " ").strip();
             final var client = Proxy.getInstance().getClient();
             if (client == null) {
@@ -388,8 +350,6 @@ public final class ChatHandler {
         }
     }
 
-    // ── Identity helpers ──────────────────────────────────────────────────────
-
     private String resolveUsername(final UUID uuid) {
         try {
             return com.zenith.Globals.CACHE.getTabListCache().get(uuid)
@@ -410,8 +370,6 @@ public final class ChatHandler {
             return null;
         }
     }
-
-    // ── Utilities ─────────────────────────────────────────────────────────────
 
     private String generateRequestId() {
         return "req-" + System.currentTimeMillis() + "-" + reqCounter.incrementAndGet();
@@ -445,25 +403,10 @@ public final class ChatHandler {
             : message;
     }
 
-    private static String stripColorCodes(final String s) {
-        return COLOR_CODE.matcher(s).replaceAll("");
-    }
-
-    /** Extract plain text from a MCProtocolLib component (or return null if not a chat-visible message). */
-    @Nullable
-    private static String extractPlainText(final Object component) {
-        if (component == null) return null;
-        // MCProtocolLib components implement toString() as plain text in most versions.
-        // For a production implementation, use the appropriate component.asUnformattedString() API.
-        final String text = component.toString();
-        return COLOR_CODE.matcher(text).replaceAll("");
-    }
-
     private static Pattern compileWhisperPattern(final String patternStr) {
         try {
             return Pattern.compile(patternStr);
         } catch (final PatternSyntaxException e) {
-            // Fall back to a safe default if the config pattern is invalid
             return Pattern.compile("^(\\S+) whispers to you: (.+)$");
         }
     }

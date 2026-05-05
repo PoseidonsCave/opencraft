@@ -16,8 +16,6 @@ class DiscordAuditPayloadTest {
         UUID.fromString("069a79f4-44e9-4726-a5be-fca90e38aaf5"),
         "Notch", UserRole.ADMIN, true);
 
-    // ── Redaction: Discord @mentions ─────────────────────────────────────────
-
     @Test
     void sanitise_stripsMentions() {
         final String sanitised = DiscordAuditPayload.sanitise("Hey @everyone check this out");
@@ -29,15 +27,11 @@ class DiscordAuditPayloadTest {
         assertFalse(DiscordAuditPayload.sanitise("@here look").contains("@here"));
     }
 
-    // ── Length capping ───────────────────────────────────────────────────────
-
     @Test
     void sanitise_cappedAt256Chars() {
         final String long256 = "a".repeat(300);
         assertTrue(DiscordAuditPayload.sanitise(long256).length() <= 256);
     }
-
-    // ── Newlines stripped ────────────────────────────────────────────────────
 
     @Test
     void sanitise_newlinesReplaced() {
@@ -45,8 +39,6 @@ class DiscordAuditPayloadTest {
         assertFalse(result.contains("\n"), "Newlines must be replaced");
         assertFalse(result.contains("\r"), "Carriage returns must be replaced");
     }
-
-    // ── No secrets in payload ─────────────────────────────────────────────────
 
     @Test
     void from_doesNotLeakInternalDetails() {
@@ -56,13 +48,8 @@ class DiscordAuditPayloadTest {
             "whisper", "!oc scan the stash", "Done",
             intent, "allowed", "dispatched", "openai"
         );
-
-        // The intent's zenithCommand is NOT in DiscordAuditPayload — only commandId
         assertEquals("stash.scan", payload.commandId());
-        // UUID should be present for our admin identity
         assertEquals("069a79f4-44e9-4726-a5be-fca90e38aaf5", payload.uuid());
-
-        // Response excerpt should be trimmed
         assertNotNull(payload.responseExcerpt());
     }
 

@@ -5,29 +5,15 @@ import com.zenith.plugin.opencraft.auth.UserRole;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Immutable definition of one allowed admin command.
- * Constructed from com.zenith.plugin.opencraft.OpenCraftConfig.AllowedCommandConfig.
- * Only commandId and description are exposed to the LLM.
- * Everything else stays Java-side.
- */
 public record CommandDefinition(
-    /** Unique ID the LLM must return verbatim. */
-    String        commandId,
-    /** Human description injected into the admin system prompt. Must not reveal internals. */
-    String        description,
-    /** ZenithProxy command string — NEVER sent to the LLM. */
-    String        zenithCommand,
-    /** Minimum role required. */
-    UserRole      roleRequired,
-    /** "low", "medium", or "high". */
-    String        riskLevel,
-    /** If true, admin must explicitly confirm before execution. */
-    boolean       confirmationRequired,
-    /** Output fields to redact before logging or whispering. */
-    List<String>  redactFields,
-    /** Optional argument schema: paramName -> "string"|"integer"|"boolean". */
-    Map<String, String> argumentSchema
+        String        commandId,
+        String        description,
+        String        zenithCommand,
+        UserRole      roleRequired,
+        String        riskLevel,
+        boolean       confirmationRequired,
+        List<String>  redactFields,
+        Map<String, String> argumentSchema
 ) {
     public boolean isHighRisk() {
         return confirmationRequired || "high".equalsIgnoreCase(riskLevel);

@@ -21,22 +21,6 @@ import java.util.function.Consumer;
 import static com.zenith.Globals.BARITONE;
 import static com.zenith.Globals.EXECUTOR;
 
-/**
- * Executes a multi-step OperationalPlan sequentially.
- *
- * Each step is validated and dispatched through CommandExecutor (which enforces
- * RBAC, allowlist, argument validation, and audit logging). This class adds
- * sequential coordination, pathfinder completion detection, per-user concurrency
- * limits, milestone notifications, and operation timeouts.
- *
- * Security invariants:
- *   - One active operation per user at a time.
- *   - Steps are validated by CommandExecutor — no security bypasses here.
- *   - operationsEnabled gate is checked at entry.
- *   - Pathfinder step completion is detected via BARITONE.isActive() polling;
- *     no external state injection is possible.
- *   - Timeouts cancel the operation gracefully.
- */
 public final class OperationExecutor {
 
     private static final long POLL_INTERVAL_SECONDS = 2L;
@@ -62,13 +46,7 @@ public final class OperationExecutor {
         this.logger          = logger;
     }
 
-    // ── Staging (confirmation gate) ────────────────────────────────────────
-
-    /**
-     * Stage a plan awaiting user confirmation. Call startStagedOperation() after
-     * the user responds with "confirm", or clearStagedPlan() on "cancel".
-     */
-    public void stagePlan(final OperationalPlan plan, final UserIdentity identity) {
+        public void stagePlan(final OperationalPlan plan, final UserIdentity identity) {
         if (identity.uuid() == null) return;
         final Instant expiresAt = Instant.now().plusSeconds(
             Math.max(1, config.operationConfirmationTimeoutSeconds)
@@ -85,11 +63,7 @@ public final class OperationExecutor {
         return stagedPlans.remove(identity.uuid()) != null;
     }
 
-    /**
-     * Start executing the previously staged plan after user confirmation.
-     * Returns null if no staged plan exists, otherwise the outcome of step 0.
-     */
-    public String startStagedOperation(
+        public String startStagedOperation(
         final UserIdentity identity,
         final String requestId,
         final Consumer<String> whisperFn
@@ -103,14 +77,7 @@ public final class OperationExecutor {
         return startOperation(staged.plan(), identity, requestId, whisperFn);
     }
 
-    // ── Execution ─────────────────────────────────────────────────────────
-
-    /**
-     * Start executing a plan. Returns a brief user-facing status string.
-     * The whisperFn callback is used to send milestone updates on the calling
-     * thread (initial) and from the scheduled polling thread (subsequent).
-     */
-    public String startOperation(
+        public String startOperation(
         final OperationalPlan plan,
         final UserIdentity identity,
         final String requestId,
@@ -150,7 +117,6 @@ public final class OperationExecutor {
         final ActiveOperation op = activeOps.remove(identity.uuid());
         if (op == null) return false;
         op.cancelPoll();
-        // Stop pathfinder if it was driving this operation
         if (BARITONE.isActive()) {
             BARITONE.stop();
         }
@@ -206,13 +172,10 @@ public final class OperationExecutor {
         return null;
     }
 
-    // ── Internal execution loop ────────────────────────────────────────────
-
     private void executeNextStep(final ActiveOperation op) {
         final int stepIndex = op.currentStep.get();
 
         if (stepIndex >= op.plan.steps().size()) {
-            // All steps done
             activeOps.remove(op.identity.uuid());
             auditLogger.log(AuditEvent.operationCompleted(op.requestId, op.identity, stepIndex));
             op.whisperFn.accept("[OC] Operation complete (" + stepIndex + "/" + stepIndex + " steps).");
@@ -243,7 +206,6 @@ public final class OperationExecutor {
         }
 
         if (result.needsConfirmation()) {
-            // High-risk single-step within a plan — pause for sub-confirmation
             op.awaitingStepConfirmation = true;
             op.whisperFn.accept("[OC] Operation paused at step " + (stepIndex + 1)
                 + " — awaiting confirmation: " + result.message());
@@ -251,12 +213,9 @@ public final class OperationExecutor {
         }
 
         op.currentStep.incrementAndGet();
-
-        // If this was a pathfinder step, poll for completion before next step
         if (step.commandId().startsWith(PATHFINDER_PREFIX) && !step.commandId().equals("pathfinder.stop")) {
             schedulePathfinderPoll(op);
         } else {
-            // Non-pathfinder: proceed immediately
             executeNextStep(op);
         }
     }
@@ -269,7 +228,6 @@ public final class OperationExecutor {
         futureRef[0] = EXECUTOR.scheduleAtFixedRate(() -> {
             try {
                 if (!activeOps.containsKey(op.identity.uuid())) {
-                    // Operation was cancelled
                     futureRef[0].cancel(false);
                     return;
                 }
@@ -285,7 +243,6 @@ public final class OperationExecutor {
                 }
 
                 if (!BARITONE.isActive()) {
-                    // Pathfinder finished (completed or stopped)
                     futureRef[0].cancel(false);
                     op.whisperFn.accept("[OC] Navigation complete — moving to next step.");
                     executeNextStep(op);
@@ -309,8 +266,6 @@ public final class OperationExecutor {
         stagedPlans.remove(identity.uuid(), staged);
         return null;
     }
-
-    // ── Inner types ────────────────────────────────────────────────────────
 
     private record StagedOperation(OperationalPlan plan, Instant expiresAt) {
         boolean isExpired() {

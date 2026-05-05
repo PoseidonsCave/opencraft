@@ -64,7 +64,6 @@ class RateLimiterTest {
         assertTrue(rateLimiter.acquireConcurrencySlot());
         assertTrue(rateLimiter.acquireConcurrencySlot());
         assertFalse(rateLimiter.acquireConcurrencySlot(), "Third slot must not be available");
-        // Release and re-acquire
         rateLimiter.releaseConcurrencySlot();
         assertTrue(rateLimiter.acquireConcurrencySlot());
     }

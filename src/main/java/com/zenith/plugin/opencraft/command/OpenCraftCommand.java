@@ -1,5 +1,7 @@
 package com.zenith.plugin.opencraft.command;
 
+import com.zenith.feature.api.ProfileData;
+import com.zenith.feature.whitelist.PlayerListsManager;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.zenith.command.api.Command;
@@ -17,28 +19,21 @@ import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.List;
-import java.util.regex.Pattern;
 
 import static com.zenith.Globals.saveConfig;
 
-/**
- * Operator command surface for /llm.
- * Accept commands only from terminal or Discord.
- * Require account-owner authorization for every subcommand.
- */
 public class OpenCraftCommand extends Command {
-
-    private static final Pattern MC_USERNAME = Pattern.compile("[A-Za-z0-9_]{1,16}");
-    private static final Pattern UUID_NO_DASHES = Pattern.compile("[0-9a-fA-F]{32}");
 
     private final OpenCraftConfig     config;
     private final OpenCraftModule     module;
     private final PluginUpdateService updateService;
     private final AuditLogger         auditLogger;
     private final ComponentLogger     logger;
+    private final UserKeyResolver     userKeyResolver;
 
     public OpenCraftCommand(final OpenCraftConfig config,
                             final OpenCraftModule module,
@@ -50,6 +45,7 @@ public class OpenCraftCommand extends Command {
         this.updateService = updateService;
         this.auditLogger   = auditLogger;
         this.logger        = logger;
+        this.userKeyResolver = new UserKeyResolver(this::lookupProfileByUsername);
     }
 
     @Override
@@ -63,13 +59,13 @@ public class OpenCraftCommand extends Command {
                 "enable",
                 "disable",
                 "user list",
-                "user add <uuid-or-username> <member|admin>",
-                "user remove <uuid-or-username>",
-                "user promote <uuid>",
-                "user demote <uuid-or-username>",
+                "user add UUID_OR_USERNAME MEMBER|ADMIN",
+                "user remove UUID_OR_USERNAME",
+                "user promote UUID_OR_USERNAME",
+                "user demote UUID_OR_USERNAME",
                 "allow list",
-                "allow add <command_id> <role> <risk> <confirm:true|false> <description> -- <zenith_command>",
-                "allow remove <command_id>",
+                "allow add COMMAND_ID ROLE RISK CONFIRM_TRUE|FALSE DESCRIPTION -- ZENITH_COMMAND",
+                "allow remove COMMAND_ID",
                 "update",
                 "update check",
                 "update stage",
@@ -123,46 +119,43 @@ public class OpenCraftCommand extends Command {
                         .then(argument("role", enumStrings("member", "admin"))
                             .executes(c -> {
                                 final String rawKey = StringArgumentType.getString(c, "key");
-                                final String normalizedKey = normalizeUserKey(rawKey);
-                                if (normalizedKey == null) {
-                                    c.getSource().getEmbed()
-                                        .title("OpenCraft User Add")
-                                        .description("Key must be a dashed UUID, a 32-character UUID, or a Minecraft username.")
-                                        .errorColor();
-                                    return ERROR;
-                                }
-
                                 final UserRole role = UserRole.fromString(StringArgumentType.getString(c, "role"));
-                                if (role == UserRole.ADMIN && !isUuidKey(normalizedKey)) {
+                                final UserKeyResolver.Resolution resolution =
+                                    userKeyResolver.resolveForStorage(rawKey, role == UserRole.ADMIN);
+                                if (!resolution.valid()) {
                                     c.getSource().getEmbed()
                                         .title("OpenCraft User Add")
-                                        .description("Admin access requires a UUID key. Username keys may only be members.")
+                                        .description(resolution.error())
                                         .errorColor();
                                     return ERROR;
                                 }
 
-                                config.users.put(normalizedKey, role.name().toLowerCase(Locale.ROOT));
+                                final String storageKey = resolution.storageKey();
+                                removeResolvedUsernameAlias(resolution);
+                                config.users.put(storageKey, role.name().toLowerCase(Locale.ROOT));
                                 saveConfig();
 
-                                c.getSource().getEmbed()
+                                final var embed = c.getSource().getEmbed()
                                     .title("OpenCraft User Added")
-                                    .addField("Key", normalizedKey, false)
-                                    .addField("Role", role.name().toLowerCase(Locale.ROOT), true)
-                                    .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+                                    .addField("Key", storageKey, false)
+                                    .addField("Role", role.name().toLowerCase(Locale.ROOT), true);
+                                if (resolution.resolvedUuidFromUsername()) {
+                                    embed.addField("Resolved from username", resolution.resolvedUsername(), false);
+                                }
+                                embed.addField("Persistence", "Saved to plugins/config/opencraft.json", false);
                                 return OK;
                             }))))
                 .then(literal("remove")
                     .then(argument("key", StringArgumentType.string())
                         .executes(c -> {
                             final String rawKey = StringArgumentType.getString(c, "key");
-                            final String normalizedKey = normalizeUserKey(rawKey);
-                            final String keyToRemove = normalizedKey != null ? normalizedKey : rawKey;
-                            final String removed = config.users.remove(keyToRemove);
+                            final String keyToRemove = findExistingUserKey(rawKey);
+                            final String removed = keyToRemove == null ? null : config.users.remove(keyToRemove);
 
                             if (removed == null) {
                                 c.getSource().getEmbed()
                                     .title("OpenCraft User Remove")
-                                    .description("No user entry found for: " + keyToRemove)
+                                    .description("No user entry found for: " + rawKey)
                                     .errorColor();
                                 return ERROR;
                             }
@@ -222,7 +215,7 @@ public class OpenCraftCommand extends Command {
                                             if (split.length != 2 || split[0].isBlank() || split[1].isBlank()) {
                                                 c.getSource().getEmbed()
                                                     .title("OpenCraft Allow Add")
-                                                    .description("Use: /llm allow add <command_id> <role> <risk> <confirm:true|false> <description> -- <zenith_command>")
+                                                    .description("Use: /llm allow add COMMAND_ID ROLE RISK CONFIRM_TRUE|FALSE DESCRIPTION -- ZENITH_COMMAND")
                                                     .errorColor();
                                                 return ERROR;
                                             }
@@ -335,7 +328,6 @@ public class OpenCraftCommand extends Command {
             auditLogger.log(AuditEvent.requestDenied(requestId, sourceName, reason));
             logger.warn("[OpenCraft] Denied /llm management command from source={} reason={}", sourceName, reason);
         } catch (final Exception ignored) {
-            // never fail command processing on audit path
         }
     }
 
@@ -376,41 +368,43 @@ public class OpenCraftCommand extends Command {
     private int updateUserRole(final com.mojang.brigadier.context.CommandContext<CommandContext> context,
                                final String rawKey,
                                final UserRole targetRole) {
-        final String normalizedKey = normalizeUserKey(rawKey);
-        if (normalizedKey == null) {
+        final UserKeyResolver.Resolution resolution =
+            userKeyResolver.resolveForStorage(rawKey, targetRole == UserRole.ADMIN);
+        if (!resolution.valid()) {
             context.getSource().getEmbed()
                 .title("OpenCraft User Update")
-                .description("Key must be a dashed UUID, a 32-character UUID, or a Minecraft username.")
-                .errorColor();
-            return ERROR;
-        }
-        if (targetRole == UserRole.ADMIN && !isUuidKey(normalizedKey)) {
-            context.getSource().getEmbed()
-                .title("OpenCraft User Update")
-                .description("Admin access requires a UUID key. Username keys may only be members.")
+                .description(resolution.error())
                 .errorColor();
             return ERROR;
         }
 
-        final String previousRole = config.users.get(normalizedKey);
+        final String keyToUpdate = findExistingUserKey(rawKey, resolution);
+        final String previousRole = keyToUpdate == null ? null : config.users.get(keyToUpdate);
         if (previousRole == null) {
             context.getSource().getEmbed()
                 .title("OpenCraft User Update")
-                .description("No user entry found for: " + normalizedKey)
+                .description("No user entry found for: " + rawKey)
                 .errorColor();
             return ERROR;
         }
 
         final String newRole = targetRole.name().toLowerCase(Locale.ROOT);
-        config.users.put(normalizedKey, newRole);
+        if (!keyToUpdate.equals(resolution.storageKey())) {
+            config.users.remove(keyToUpdate);
+        }
+        removeResolvedUsernameAlias(resolution);
+        config.users.put(resolution.storageKey(), newRole);
         saveConfig();
 
-        context.getSource().getEmbed()
+        final var embed = context.getSource().getEmbed()
             .title("OpenCraft User Updated")
-            .addField("Key", normalizedKey, false)
+            .addField("Key", resolution.storageKey(), false)
             .addField("Previous role", previousRole, true)
-            .addField("New role", newRole, true)
-            .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+            .addField("New role", newRole, true);
+        if (resolution.resolvedUuidFromUsername()) {
+            embed.addField("Resolved from username", resolution.resolvedUsername(), false);
+        }
+        embed.addField("Persistence", "Saved to plugins/config/opencraft.json", false);
         return OK;
     }
 
@@ -435,34 +429,69 @@ public class OpenCraftCommand extends Command {
         return true;
     }
 
-    private static boolean isUuidKey(final String key) {
-        try {
-            UUID.fromString(key);
-            return true;
-        } catch (final IllegalArgumentException e) {
-            return false;
+    private String findExistingUserKey(final String rawKey) {
+        final String normalizedKey = UserKeyResolver.normalizeUserKey(rawKey);
+        if (normalizedKey != null && config.users.containsKey(normalizedKey)) {
+            return normalizedKey;
+        }
+        final UserKeyResolver.Resolution resolution = userKeyResolver.resolveForStorage(rawKey, false);
+        return findExistingUserKey(rawKey, resolution);
+    }
+
+    private String findExistingUserKey(final String rawKey, final UserKeyResolver.Resolution resolution) {
+        if (resolution.valid() && config.users.containsKey(resolution.storageKey())) {
+            return resolution.storageKey();
+        }
+        final String normalizedKey = UserKeyResolver.normalizeUserKey(rawKey);
+        if (normalizedKey != null && config.users.containsKey(normalizedKey)) {
+            return normalizedKey;
+        }
+        if (resolution.valid() && resolution.resolvedUsername() != null && config.users.containsKey(resolution.resolvedUsername())) {
+            return resolution.resolvedUsername();
+        }
+        if (resolution.valid() && resolution.inputUsername() != null && config.users.containsKey(resolution.inputUsername())) {
+            return resolution.inputUsername();
+        }
+        final String strippedRawKey = rawKey == null ? null : rawKey.strip();
+        if (strippedRawKey == null || strippedRawKey.isBlank()) {
+            return null;
+        }
+        return config.users.containsKey(strippedRawKey) ? strippedRawKey : null;
+    }
+
+    private void removeResolvedUsernameAlias(final UserKeyResolver.Resolution resolution) {
+        if (!resolution.resolvedUuidFromUsername()) {
+            return;
+        }
+        if (resolution.inputUsername() != null && !resolution.inputUsername().equals(resolution.storageKey())) {
+            config.users.remove(resolution.inputUsername());
+        }
+        if (resolution.resolvedUsername() != null && !resolution.resolvedUsername().equals(resolution.storageKey())) {
+            config.users.remove(resolution.resolvedUsername());
         }
     }
 
-    private static String normalizeUserKey(final String rawKey) {
-        final String key = rawKey == null ? "" : rawKey.strip();
-        if (key.isBlank()) {
-            return null;
+    private Optional<ProfileData> lookupProfileByUsername(final String username) {
+        final Optional<ProfileData> cachedProfile = lookupProfileFromTabList(username);
+        if (cachedProfile.isPresent()) {
+            return cachedProfile;
         }
+        return PlayerListsManager.getProfileFromUsername(username);
+    }
+
+    private Optional<ProfileData> lookupProfileFromTabList(final String username) {
         try {
-            return UUID.fromString(key).toString();
-        } catch (final IllegalArgumentException ignored) {
-            // fall through
+            return com.zenith.Globals.CACHE.getTabListCache().getFromName(username)
+                .map(entry -> {
+                    final UUID uuid = entry.getProfile() != null ? entry.getProfile().getId() : entry.getProfileId();
+                    final String resolvedName = entry.getProfile() != null ? entry.getProfile().getName() : entry.getName();
+                    return new SimpleProfileData(resolvedName, uuid);
+                });
+        } catch (final Exception ignored) {
+            return Optional.empty();
         }
+    }
 
-        if (UUID_NO_DASHES.matcher(key).matches()) {
-            final String dashed = key.replaceFirst(
-                "([0-9a-fA-F]{8})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{4})([0-9a-fA-F]{12})",
-                "$1-$2-$3-$4-$5"
-            );
-            return UUID.fromString(dashed).toString();
-        }
-
-        return MC_USERNAME.matcher(key).matches() ? key : null;
+    private record SimpleProfileData(String name, UUID uuid) implements ProfileData {
     }
 }

@@ -38,5 +38,4 @@ logs/
 dependency-check-report*
 
 # Test infrastructure (local-only)
-src/test/
 docs/

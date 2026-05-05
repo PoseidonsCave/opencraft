@@ -3,7 +3,6 @@ package com.zenith.plugin.opencraft.provider;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 
-/** Constructs the appropriate OpenCraftProvider from the operator configuration. */
 public final class ProviderFactory {
 
     private ProviderFactory() {}

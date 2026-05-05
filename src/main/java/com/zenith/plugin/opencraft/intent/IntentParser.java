@@ -13,24 +13,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Parses the raw string content from an OpenCraftResponse into one of several
- * structured response types.
- *
- * Supported response types (admin):
- *   {"type": "response",        "content": "..."}
- *   {"type": "command_intent",  "command_id": "...", "arguments": {}, "explanation": "..."}
- *   {"type": "plan",            "steps": [...], "risk": "LOW|MEDIUM|HIGH",
- *                               "confirmation_required": bool, "cost_estimate": int,
- *                               "estimated_duration": "...", "reasoning": "..."}
- *   {"type": "refusal",         "reason": "..."}
- *   {"type": "clarification",   "message": "..."}
- *
- * Member users receive only "response" type.
- *
- * All non-JSON or unrecognised output falls back to PlainResponse.
- * This class never throws; malformed input always produces a safe fallback.
- */
 public final class IntentParser {
 
     private static final String TYPE_RESPONSE       = "response";
@@ -47,8 +29,7 @@ public final class IntentParser {
         this.logger = logger;
     }
 
-    /** Sealed hierarchy of parse results. */
-    public sealed interface ParsedResponse
+        public sealed interface ParsedResponse
         permits PlainResponse, CommandIntentResponse, PlanResponse,
                 RefusalResponse, ClarificationResponse {}
 
@@ -58,11 +39,7 @@ public final class IntentParser {
     public record RefusalResponse(String reason) implements ParsedResponse {}
     public record ClarificationResponse(String message) implements ParsedResponse {}
 
-    /**
-     * Parse the raw LLM output. Never throws; malformed input returns a
-     * PlainResponse with a safe fallback message.
-     */
-    public ParsedResponse parse(final String raw, final String requestId) {
+        public ParsedResponse parse(final String raw, final String requestId) {
         if (raw == null || raw.isBlank()) {
             return new PlainResponse("(no response)");
         }
@@ -185,11 +162,7 @@ public final class IntentParser {
         return new PlainResponse(sanitise(json.get("content").getAsString()));
     }
 
-    /**
-     * Strip Minecraft colour codes and control characters from model output
-     * to prevent chat injection or impersonation.
-     */
-    private static String sanitise(final String s) {
+        private static String sanitise(final String s) {
         if (s == null) return "";
         return s.replaceAll("§[0-9a-fk-or]", "").trim();
     }

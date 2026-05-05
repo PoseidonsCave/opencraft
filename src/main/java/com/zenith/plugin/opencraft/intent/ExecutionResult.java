@@ -2,15 +2,10 @@ package com.zenith.plugin.opencraft.intent;
 
 import org.jspecify.annotations.Nullable;
 
-/**
- * Result returned by command execution or confirmation.
- */
 public record ExecutionResult(
     Status  status,
-    /** Message safe to whisper to the requesting admin (already redacted). */
-    String  message,
-    /** If NEEDS_CONFIRMATION, the pending intent is stored here; otherwise null. */
-    @Nullable PendingConfirmation pending
+        String  message,
+        @Nullable PendingConfirmation pending
 ) {
     public enum Status {
         SUCCESS,

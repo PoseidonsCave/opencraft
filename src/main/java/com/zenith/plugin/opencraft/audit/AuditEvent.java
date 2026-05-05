@@ -5,28 +5,17 @@ import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
 
-/**
- * Immutable audit log entry.
- * Must not contain secrets (API keys, webhook URLs, raw system prompts).
- */
 public record AuditEvent(
     Instant        timestamp,
     String         requestId,
     AuditEventType type,
-    /** Redacted label, e.g. "Notch (uuid)". Null for system events. */
-    @Nullable String userLabel,
+        @Nullable String userLabel,
     @Nullable String userRole,
-    /** Truncated prompt excerpt — no longer than 200 chars. */
-    @Nullable String promptExcerpt,
-    /** Truncated response or result excerpt. */
-    @Nullable String resultExcerpt,
-    /** Command ID if this is a command-related event. */
-    @Nullable String commandId,
-    /** Additional detail (denial reason, provider name, etc.). */
-    @Nullable String detail
+        @Nullable String promptExcerpt,
+        @Nullable String resultExcerpt,
+        @Nullable String commandId,
+        @Nullable String detail
 ) {
-
-    // ── Factory methods ───────────────────────────────────────────────────────
 
     public static AuditEvent promptReceived(final String requestId,
                                             final UserIdentity identity,
@@ -142,8 +131,6 @@ public record AuditEvent(
             identity.auditLabel(), identity.role().name(),
             null, null, commandId, reason);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     private static String excerpt(final String s) {
         if (s == null) return null;

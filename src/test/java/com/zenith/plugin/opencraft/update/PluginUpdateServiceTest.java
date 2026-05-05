@@ -33,7 +33,6 @@ class PluginUpdateServiceTest {
 
     @Test
     void isNewer_preReleaseStripped() {
-        // "1.0.1-beta.1" should be treated as 1.0.1 vs current 1.0.0
         assertTrue(PluginUpdateService.isNewer("1.0.0", "1.0.1-beta.1"));
     }
 }
