@@ -4,6 +4,9 @@ OpenCraft adds a chat-based AI assistant to ZenithProxy. Approved players can as
 
 The plugin is designed to be useful without being reckless: player access is allowlisted, admin actions are deny-by-default, high-risk requests require confirmation, and secrets stay out of config files and chat output.
 
+We have a Discord server! Feel free to join for up-to-date information:
+https://discord.gg/8ACQJUtQse
+
 ---
 
 ## Features
