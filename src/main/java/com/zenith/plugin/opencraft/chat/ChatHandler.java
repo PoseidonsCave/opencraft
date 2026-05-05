@@ -36,9 +36,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 public final class ChatHandler {
 
@@ -57,6 +55,7 @@ public final class ChatHandler {
     private final ComponentLogger      logger;
     private final IntentParser         intentParser;
     private final WorldStateObserver   worldStateObserver;
+    private final WhisperPatternMatcher whisperPatternMatcher;
     private final ExecutorService      llmExecutor;
     private final AtomicLong           reqCounter = new AtomicLong(0);
 
@@ -82,6 +81,7 @@ public final class ChatHandler {
         this.logger             = logger;
         this.intentParser       = new IntentParser(logger);
         this.worldStateObserver = new WorldStateObserver(logger);
+        this.whisperPatternMatcher = new WhisperPatternMatcher();
         this.llmExecutor        = Executors.newCachedThreadPool(
             r -> { final Thread t = new Thread(r, "opencraft-worker"); t.setDaemon(true); return t; }
         );
@@ -100,20 +100,21 @@ public final class ChatHandler {
         handleRequest(senderUuid, username, userInput, "public_chat");
     }
 
-        public void onSystemChat(final Object formattedContent) {
+    public void onSystemChat(final Object formattedContent) {
         if (!config.whisperEnabled) return;
         final String plain = ChatContentUtil.extractPlainText(formattedContent);
         if (plain == null) return;
-        final Matcher m = compileWhisperPattern(config.whisperInboundPattern).matcher(plain);
-        if (!m.matches()) {
+        final WhisperPatternMatcher.WhisperMatch whisperMatch =
+            whisperPatternMatcher.match(plain, config.whisperInboundPattern);
+        if (whisperMatch == null) {
             if (plain.contains(config.prefix)) {
                 logger.debug("[OpenCraft] Ignored system chat containing prefix because it did not match whisperInboundPattern: {}",
                     plain);
             }
             return;
         }
-        final String senderName = m.group(1);
-        final String rawMessage = m.group(2);
+        final String senderName = whisperMatch.senderName();
+        final String rawMessage = whisperMatch.rawMessage();
 
         if (!rawMessage.startsWith(config.prefix)) return;
         final String userInput = rawMessage.substring(config.prefix.length()).strip();
@@ -403,11 +404,4 @@ public final class ChatHandler {
             : message;
     }
 
-    private static Pattern compileWhisperPattern(final String patternStr) {
-        try {
-            return Pattern.compile(patternStr);
-        } catch (final PatternSyntaxException e) {
-            return Pattern.compile("^(\\S+) whispers to you: (.+)$");
-        }
-    }
 }
