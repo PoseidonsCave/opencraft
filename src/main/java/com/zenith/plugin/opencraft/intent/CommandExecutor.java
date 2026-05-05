@@ -21,23 +21,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
-/**
- * Validates a CommandIntent against the allowlist and, after optional
- * high-risk confirmation, executes the mapped ZenithProxy command.
- *
- * Security invariants:
- * 
- *   - Deny-by-default: only allowlisted command IDs may execute.
- *   - Role is re-verified in Java regardless of what the LLM returned.
- *   - Arguments are validated against the declared schema before use.
- *   - High-risk commands require explicit admin confirmation with TTL.
- *   - The zenithCommand string is interpolated only from validated arg values.
- *   - Execution output is redacted before being returned or logged.
- * 
- */
 public final class CommandExecutor {
-
-    // Minecraft username safe characters — used to sanitize argument values
     private static final Pattern SAFE_ARG = Pattern.compile("[^a-zA-Z0-9_\\-.]");
 
     private final CommandAllowlist commandAllowlist;
@@ -46,8 +30,7 @@ public final class CommandExecutor {
     private final DiscordNotifier  discordNotifier;
     private final ComponentLogger  logger;
 
-    /** Pending high-risk confirmations keyed by admin UUID. */
-    private final ConcurrentHashMap<UUID, PendingConfirmation> pendingConfirmations =
+        private final ConcurrentHashMap<UUID, PendingConfirmation> pendingConfirmations =
         new ConcurrentHashMap<>();
 
     public CommandExecutor(final OpenCraftConfig config,
@@ -62,22 +45,15 @@ public final class CommandExecutor {
         this.logger           = logger;
     }
 
-    /**
-     * Validate and execute a command intent for the given admin user.
-     * This method is the single authoritative execution gate.
-     */
-    public ExecutionResult execute(final CommandIntent intent,
+        public ExecutionResult execute(final CommandIntent intent,
                                    final UserIdentity identity,
                                    final String requestId) {
-        // ── 1. Role check (Java-enforced, not LLM-trusting) ───────────────────
         if (identity.role() != UserRole.ADMIN) {
             logger.warn("[OpenCraft] req={} Non-admin {} attempted command execution.",
                 requestId, identity.auditLabel());
             auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Insufficient role", intent.commandId()));
             return ExecutionResult.denied("Administrative commands require admin role.");
         }
-
-        // ── 2. Allowlist lookup ───────────────────────────────────────────────
         final Optional<CommandDefinition> defOpt = commandAllowlist.find(intent.commandId());
         if (defOpt.isEmpty()) {
             logger.warn("[OpenCraft] req={} Command '{}' not in allowlist.",
@@ -87,14 +63,10 @@ public final class CommandExecutor {
         }
 
         final CommandDefinition def = defOpt.get();
-
-        // ── 3. Role check against definition ─────────────────────────────────
         if (!identity.role().satisfies(def.roleRequired())) {
             auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Role requirement", intent.commandId()));
             return ExecutionResult.denied("Insufficient role for this command.");
         }
-
-        // ── 4. Argument validation ────────────────────────────────────────────
         final String argError = validateArguments(intent.arguments(), def);
         if (argError != null) {
             logger.warn("[OpenCraft] req={} Argument validation failed for '{}': {}",
@@ -102,8 +74,6 @@ public final class CommandExecutor {
             auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Arg validation: " + argError, intent.commandId()));
             return ExecutionResult.denied("Command arguments are invalid.");
         }
-
-        // ── 5. High-risk confirmation gate ────────────────────────────────────
         if (def.isHighRisk() && identity.uuid() != null) {
             final Instant expiresAt = Instant.now().plus(
                 Duration.ofSeconds(Math.max(5, config.confirmationTimeoutSeconds))
@@ -119,15 +89,10 @@ public final class CommandExecutor {
                 "Reply '" + config.prefix + " confirm' within " + Math.max(5, config.confirmationTimeoutSeconds) +
                 " seconds to proceed, or '" + config.prefix + " cancel'.");
         }
-
-        // ── 6. Execute ────────────────────────────────────────────────────────
         return doExecute(intent, def, identity, requestId);
     }
 
-    /**
-     * Process a confirmation from an admin for a previously staged high-risk command.
-     */
-    public ExecutionResult confirm(final UserIdentity identity, final String requestId) {
+        public ExecutionResult confirm(final UserIdentity identity, final String requestId) {
         if (identity.role() != UserRole.ADMIN || identity.uuid() == null) {
             return ExecutionResult.denied("Only admins can confirm commands.");
         }
@@ -143,8 +108,7 @@ public final class CommandExecutor {
         return doExecute(pending.intent(), pending.definition(), identity, requestId);
     }
 
-    /** Cancel any pending confirmation for this admin. */
-    public boolean cancel(final UserIdentity identity) {
+        public boolean cancel(final UserIdentity identity) {
         if (identity.uuid() == null) return false;
         return pendingConfirmations.remove(identity.uuid()) != null;
     }
@@ -157,8 +121,6 @@ public final class CommandExecutor {
         return true;
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
-
     private ExecutionResult doExecute(final CommandIntent intent,
                                       final CommandDefinition def,
                                       final UserIdentity identity,
@@ -169,10 +131,6 @@ public final class CommandExecutor {
             requestId, identity.auditLabel(), def.commandId(), command);
 
         try {
-            // Dispatch the validated, allow-listed command through ZenithProxy's
-            // canonical command bus, attributed to the TERMINAL source. The string
-            // is constructed only from def.zenithCommand() (operator-controlled)
-            // plus interpolated, schema- and SAFE_ARG-validated argument values.
             COMMAND.execute(CommandContext.create(command, CommandSources.TERMINAL));
 
             final String rawResult = "[command dispatched: " + def.commandId() + "]";
@@ -191,14 +149,9 @@ public final class CommandExecutor {
         }
     }
 
-    /**
-     * Validate that all required arguments are present and their values contain
-     * only safe characters. Returns null if valid, or an error description.
-     */
-    private static String validateArguments(final Map<String, String> args,
+        private static String validateArguments(final Map<String, String> args,
                                              final CommandDefinition def) {
         if (def.argumentSchema().isEmpty()) {
-            // No schema declared — no arguments accepted
             if (!args.isEmpty()) return "No arguments expected";
             return null;
         }
@@ -212,13 +165,11 @@ public final class CommandExecutor {
             if (value == null || value.isBlank()) {
                 return "Blank value for argument: " + paramName;
             }
-            // Type validation
             if ("integer".equalsIgnoreCase(paramType)) {
                 try { Integer.parseInt(value.strip()); } catch (final NumberFormatException nfe) {
                     return "Argument '" + paramName + "' must be an integer";
                 }
             }
-            // Character-level safety: prevent injection into command strings
             if (SAFE_ARG.matcher(value).find()) {
                 return "Argument '" + paramName + "' contains disallowed characters";
             }
@@ -226,26 +177,16 @@ public final class CommandExecutor {
         return null;
     }
 
-    /**
-     * Interpolate validated argument values into the command template.
-     * Template placeholders use the format {argName}.
-     * Only arguments that passed schema validation reach this point.
-     */
-    private static String interpolateCommand(final String template,
+        private static String interpolateCommand(final String template,
                                               final Map<String, String> args) {
         String result = template;
         for (final Map.Entry<String, String> e : args.entrySet()) {
-            // Values were already validated by SAFE_ARG — safe to substitute
             result = result.replace("{" + e.getKey() + "}", e.getValue());
         }
         return result;
     }
 
-    /**
-     * Replace values of listed field names in a string with "[REDACTED]".
-     * Field names are matched case-insensitively.
-     */
-    static String redact(final String text, final List<String> fields) {
+        static String redact(final String text, final List<String> fields) {
         if (text == null || fields.isEmpty()) return text;
         String result = text;
         for (final String field : fields) {

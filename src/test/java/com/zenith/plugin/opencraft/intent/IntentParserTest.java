@@ -16,8 +16,6 @@ class IntentParserTest {
         parser = new IntentParser(mock(ComponentLogger.class));
     }
 
-    // ── Plain response ────────────────────────────────────────────────────────
-
     @Test
     void parseValidPlainResponse() {
         final var result = parser.parse("{\"type\":\"response\",\"content\":\"Hello!\"}", "req-1");
@@ -30,8 +28,6 @@ class IntentParserTest {
         final var result = parser.parse("{\"content\":\"Hi there\"}", "req-2");
         assertInstanceOf(IntentParser.PlainResponse.class, result);
     }
-
-    // ── Command intent ────────────────────────────────────────────────────────
 
     @Test
     void parseValidCommandIntent() {
@@ -56,8 +52,6 @@ class IntentParserTest {
         assertEquals("100", ci.intent().arguments().get("x"));
     }
 
-    // ── Malformed JSON ────────────────────────────────────────────────────────
-
     @Test
     void parseMalformedJson_returnsPlainFallback() {
         final var result = parser.parse("{not valid json", "req-5");
@@ -78,8 +72,6 @@ class IntentParserTest {
         final var result = parser.parse(null, "req-7");
         assertInstanceOf(IntentParser.PlainResponse.class, result);
     }
-
-    // ── Prompt injection resistance ───────────────────────────────────────────
 
     @Test
     void colorCodesStripped() {

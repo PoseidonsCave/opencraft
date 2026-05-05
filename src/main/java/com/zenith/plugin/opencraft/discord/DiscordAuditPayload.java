@@ -6,10 +6,6 @@ import org.jspecify.annotations.Nullable;
 
 import java.time.Instant;
 
-/**
- * Immutable payload for optional OpenCraft Discord notifications.
- * All fields have already been redacted by the time this record is constructed.
- */
 public record DiscordAuditPayload(
     Instant    timestamp,
     String     requestId,
@@ -26,8 +22,7 @@ public record DiscordAuditPayload(
     @Nullable String executionResult,
     @Nullable String providerName
 ) {
-    /** Truncate + strip dangerous patterns from any text that goes into Discord. */
-    public static String sanitise(@Nullable final String s) {
+        public static String sanitise(@Nullable final String s) {
         if (s == null) return null;
         final String cleaned = s.replaceAll("[\r\n]+", " ")
                 .replaceAll("@everyone|@here", "[mention removed]")

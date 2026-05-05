@@ -73,8 +73,6 @@ class CommandExecutorTest {
         return new UserIdentity(UUID.randomUUID(), "jeb_", UserRole.MEMBER, true);
     }
 
-    // ── RBAC enforcement ──────────────────────────────────────────────────────
-
     @Test
     void member_cannotExecuteCommand() {
         final CommandIntent intent = new CommandIntent("stash.scan", Map.of(), "scan");
@@ -89,8 +87,6 @@ class CommandExecutorTest {
         assertEquals(ExecutionResult.Status.DENIED, result.status());
     }
 
-    // ── High-risk confirmation ────────────────────────────────────────────────
-
     @Test
     void highRiskCommand_requiresConfirmation() {
         final CommandIntent intent = new CommandIntent("stash.clearall", Map.of(), "clear");
@@ -102,12 +98,7 @@ class CommandExecutorTest {
 
     @Test
     void confirm_executesAfterPending() {
-        // Stage the high-risk command
         executor.execute(new CommandIntent("stash.clearall", Map.of(), "clear"), admin(), "req-4");
-
-        // Confirm — note: actual ZenithProxy dispatch will fail in unit test
-        // We verify the logic paths execute without exception
-        // In a real integration test, ZenithProxy would be mocked
         assertTrue(executor.hasPendingConfirmation(admin()));
     }
 
@@ -118,8 +109,6 @@ class CommandExecutorTest {
         assertTrue(executor.cancel(admin()));
         assertFalse(executor.hasPendingConfirmation(admin()));
     }
-
-    // ── Argument validation ───────────────────────────────────────────────────
 
     @Test
     void missingRequiredArgument_denied() {
@@ -144,8 +133,6 @@ class CommandExecutorTest {
         final ExecutionResult result = executor.execute(intent, admin(), "req-8");
         assertEquals(ExecutionResult.Status.DENIED, result.status());
     }
-
-    // ── Redaction ─────────────────────────────────────────────────────────────
 
     @Test
     void redact_removesNamedFields() {

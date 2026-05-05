@@ -31,8 +31,6 @@ class AuthorizationServiceTest {
         service = new AuthorizationService(config, mock(net.kyori.adventure.text.logger.slf4j.ComponentLogger.class));
     }
 
-    // ── UUID resolution ───────────────────────────────────────────────────────
-
     @Test
     void resolveAdmin_byUuid_withDashes() {
         final Optional<UserIdentity> result = service.resolveByUuid(ADMIN_UUID, "Notch");
@@ -55,16 +53,12 @@ class AuthorizationServiceTest {
         assertTrue(result.isEmpty());
     }
 
-    // ── Username fallback disabled ────────────────────────────────────────────
-
     @Test
     void username_fallbackDisabled_returnsEmpty() {
         config.allowUsernameOnlyFallback = false;
         final Optional<UserIdentity> result = service.resolveByUsername("Notch");
         assertTrue(result.isEmpty());
     }
-
-    // ── Username fallback enabled ─────────────────────────────────────────────
 
     @Test
     void username_fallbackEnabled_member_granted() {
@@ -81,7 +75,6 @@ class AuthorizationServiceTest {
 
     @Test
     void username_fallbackEnabled_adminDowngradedToMember() {
-        // CRITICAL: admin must not be granted through username-only path
         config.allowUsernameOnlyFallback = true;
         config.users = Map.of("Notch", "admin");
         service = new AuthorizationService(config, mock(net.kyori.adventure.text.logger.slf4j.ComponentLogger.class));
@@ -92,23 +85,15 @@ class AuthorizationServiceTest {
             "Admin must be downgraded to MEMBER when UUID is not confirmed");
     }
 
-    // ── UUID present but not whitelisted ─────────────────────────────────────
-
     @Test
     void uuidPresentButNotWhitelisted_doesNotFallThroughToUsername() {
-        // Even if username happens to match a user entry, UUID path must not
-        // fall through to username lookup (prevents UUID spoofing from cracked server)
         config.users = Map.of(
             "Notch", "admin"  // username key only
         );
         service = new AuthorizationService(config, mock(net.kyori.adventure.text.logger.slf4j.ComponentLogger.class));
-
-        // UUID not in whitelist → should be denied even though username matches
         final Optional<UserIdentity> result = service.resolve(UUID.randomUUID(), "Notch");
         assertTrue(result.isEmpty());
     }
-
-    // ── UserRole ──────────────────────────────────────────────────────────────
 
     @Test
     void userRole_satisfies() {

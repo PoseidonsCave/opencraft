@@ -47,8 +47,6 @@ class PromptBuilderTest {
         return WorldState.disconnected();
     }
 
-    // ── Security rules always present ────────────────────────────────────────
-
     @Test
     void memberPrompt_containsSecurityRules() {
         final String prompt = builder.build(member(), "req-1", defaultWorldState());
@@ -61,8 +59,6 @@ class PromptBuilderTest {
         final String prompt = builder.build(admin(), "req-2", defaultWorldState());
         assertTrue(prompt.contains("MANDATORY SECURITY RULES"));
     }
-
-    // ── Tool definitions: admins only ─────────────────────────────────────────
 
     @Test
     void adminPrompt_containsCommandTools() {
@@ -87,8 +83,6 @@ class PromptBuilderTest {
             "command_intent format must not be included in member prompt");
     }
 
-    // ── Grounding context ────────────────────────────────────────────────────
-
     @Test
     void prompt_containsUsername() {
         final String prompt = builder.build(member(), "req-6", defaultWorldState());
@@ -110,15 +104,11 @@ class PromptBuilderTest {
         assertTrue(adminPrompt.contains("admin"));
     }
 
-    // ── World state in prompt ────────────────────────────────────────────────
-
     @Test
     void prompt_containsWorldStateBlock() {
         final String prompt = builder.build(member(), "req-12", defaultWorldState());
         assertTrue(prompt.contains("WORLD STATE"), "Prompt must contain world state block");
     }
-
-    // ── Injection resistance ─────────────────────────────────────────────────
 
     @Test
     void prompt_doesNotContainApiKey() {

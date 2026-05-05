@@ -7,28 +7,11 @@ import com.zenith.plugin.opencraft.auth.UserRole;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Hard-coded baseline allowlist entries derived from real ZenithProxy commands.
- *
- * These entries are merged into the allowlist when
- * OpenCraftConfig.baselineOperationsEnabled is true. Operators can augment or
- * override them by adding entries with the same commandId to allowedCommands.
- *
- * All zenithCommand strings here were verified against ZenithProxy source at
- * src/main/java/com/zenith/command/impl/PathfinderCommand.java and
- * src/main/java/com/zenith/command/impl/TasksCommand.java.
- *
- * EULA note: pathfinder.mine and pathfinder.clearArea are HIGH risk and
- * require explicit confirmation because automated mining and clearing can
- * violate 2b2t and other server rules. Operators should evaluate their server's
- * ToS before enabling these.
- */
 public final class BaselineOperations {
 
     private BaselineOperations() {}
 
-    /** Returns all baseline operation definitions as CommandDefinition objects. */
-    public static List<CommandDefinition> definitions() {
+        public static List<CommandDefinition> definitions() {
         return List.of(
             define(
                 "pathfinder.status",

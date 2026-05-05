@@ -35,10 +35,10 @@ Native Anthropic, Gemini, or other non-OpenAI request shapes are not supported a
 
 ### 1. Drop the JAR in
 
-1. Download the latest `opencraft-<version>.jar` and `opencraft-<version>.jar.sha256` from [Releases](https://github.com/PoseidonsCave/opencraft/releases).
+1. Download the latest `opencraft-VERSION.jar` and `opencraft-VERSION.jar.sha256` from [Releases](https://github.com/PoseidonsCave/opencraft/releases).
 2. Verify the checksum:
    ```sh
-   sha256sum -c opencraft-<version>.jar.sha256
+   sha256sum -c opencraft-VERSION.jar.sha256
    ```
 3. Place the JAR in ZenithProxy's `plugins/` directory.
 
@@ -120,14 +120,14 @@ The fields you'll touch most often:
 }
 ```
 
-Roles are `"member"` or `"admin"`. UUID lookup (with or without dashes) is preferred. `allowUsernameOnlyFallback: true` enables name-based lookup for offline servers, but **admin role is never granted by username alone** — a confirmed UUID is always required for admin authority.
+Roles are `"member"` or `"admin"`. UUID lookup (with or without dashes) is preferred. When you use `/llm user add`, `/llm user promote`, `/llm user demote`, or `/llm user remove` with a username, OpenCraft first tries to resolve that username to a UUID-backed profile and stores or updates the UUID entry when it can. `allowUsernameOnlyFallback: true` still controls the weaker runtime name-only auth path for offline servers, but **admin role is never granted by username alone** — a confirmed UUID is always required for admin authority.
 
 For live operations, you usually do not need to hand-edit the `users` block:
 
 ```text
 /llm user add 069a79f4-44e9-4726-a5be-fca90e38aaf5 admin
 /llm user add SomePlayer member
-/llm user promote 069a79f4-44e9-4726-a5be-fca90e38aaf5
+/llm user promote SomePlayer
 /llm user demote SomePlayer
 /llm user remove SomePlayer
 /llm user list
@@ -170,7 +170,7 @@ For live operations, you can manage the basic allowlist without editing JSON dir
 `/llm allow add` expects everything after the `confirm` flag in the form:
 
 ```text
-<description> -- <zenith_command>
+DESCRIPTION -- ZENITH_COMMAND
 ```
 
 That keeps the operator-facing description separate from the actual Zenith command string. More advanced fields such as `argumentSchema` and `redactFields` still require editing `plugins/config/opencraft.json` manually.
@@ -223,13 +223,13 @@ In short: players use `!oc ...` in chat, while the proxy owner manages OpenCraft
 | `/llm status` | account owner | Module state, provider, model, prefix, update status |
 | `/llm config` | account owner | Non-sensitive config summary (no secrets, no UUIDs) |
 | `/llm user list` | account owner | Show configured user entries and whether username fallback is enabled |
-| `/llm user add <uuid-or-username> <member\|admin>` | account owner | Persist a user entry immediately; `admin` requires a UUID key |
-| `/llm user promote <uuid>` | account owner | Upgrade an existing UUID-backed user entry to `admin` |
-| `/llm user demote <uuid-or-username>` | account owner | Downgrade an existing user entry to `member` |
-| `/llm user remove <uuid-or-username>` | account owner | Remove a persisted user entry immediately |
+| `/llm user add UUID_OR_USERNAME MEMBER\|ADMIN` | account owner | Persist a user entry immediately; username input is resolved to UUID when possible, and `admin` still requires a UUID-backed profile |
+| `/llm user promote UUID_OR_USERNAME` | account owner | Upgrade an existing user entry to `admin`, resolving username input to UUID when possible |
+| `/llm user demote UUID_OR_USERNAME` | account owner | Downgrade an existing user entry to `member` |
+| `/llm user remove UUID_OR_USERNAME` | account owner | Remove a persisted user entry immediately |
 | `/llm allow list` | account owner | Show allowlisted command IDs, roles, risks, and confirmation flags |
-| `/llm allow add <command_id> <role> <risk> <confirm> <description> -- <zenith_command>` | account owner | Persist a basic allowlist entry immediately |
-| `/llm allow remove <command_id>` | account owner | Remove a persisted allowlist entry immediately |
+| `/llm allow add COMMAND_ID ROLE RISK CONFIRM DESCRIPTION -- ZENITH_COMMAND` | account owner | Persist a basic allowlist entry immediately |
+| `/llm allow remove COMMAND_ID` | account owner | Remove a persisted allowlist entry immediately |
 | `/llm enable` | account owner | Enable the module |
 | `/llm disable` | account owner | Disable the module |
 | `/llm update` / `update check` | account owner | Check GitHub for a newer release |
@@ -338,7 +338,7 @@ cd opencraft
 ./gradlew build
 ```
 
-The JAR is written to `build/libs/opencraft-<version>.jar`.
+The JAR is written to `build/libs/opencraft-VERSION.jar`.
 
 Run tests:
 

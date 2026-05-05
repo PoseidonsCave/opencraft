@@ -7,16 +7,6 @@ import java.util.List;
 
 import static com.zenith.Globals.*;
 
-/**
- * Gathers a point-in-time snapshot of ZenithProxy and game state.
- *
- * All reads are from ZenithProxy's own thread-safe caches (DataCache, BOT,
- * BARITONE, MODULE, Proxy). No network I/O is performed; this call is safe
- * to invoke on any thread.
- *
- * If any read fails (e.g. not yet connected), a safe default is used and the
- * error is logged at WARN level.
- */
 public final class WorldStateObserver {
 
     private final ComponentLogger logger;
@@ -66,8 +56,6 @@ public final class WorldStateObserver {
         final boolean pathfinderActive   = BARITONE.isActive();
         final var     currentGoal        = BARITONE.currentGoal();
         final String  pathfinderGoalDesc = currentGoal != null ? currentGoal.getClass().getSimpleName() : "";
-
-        // Tab list size is a reasonable proxy for nearby visible players.
         final int nearbyPlayerCount = CACHE.getTabListCache().getTablist().size();
 
         final List<String> enabledModules = MODULE.getModules().stream()

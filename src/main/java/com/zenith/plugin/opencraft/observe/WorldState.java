@@ -4,13 +4,6 @@ import org.jspecify.annotations.Nullable;
 
 import java.util.List;
 
-/**
- * Immutable snapshot of ZenithProxy and game state captured at request time.
- * Injected into the system prompt as a read-only grounding context block.
- *
- * All fields come directly from ZenithProxy's internal caches and are safe
- * to share with the LLM: no secrets, no credentials, no player UUIDs.
- */
 public record WorldState(
     boolean connected,
     boolean inQueue,
@@ -28,13 +21,7 @@ public record WorldState(
     int     occupiedInventorySlots,
     List<String> enabledModules
 ) {
-    /**
-     * Render this snapshot as a prompt context block suitable for injection
-     * into a system prompt. Coordinate data is gated on coords reporting config
-     * but in this context the LLM is an operator tool — coordinates are included
-     * so the LLM can reason about spatial operations.
-     */
-    public String toPromptBlock() {
+        public String toPromptBlock() {
         final var sb = new StringBuilder();
         sb.append("WORLD STATE (read-only snapshot at request time):\n");
 
@@ -77,13 +64,11 @@ public record WorldState(
         return sb.toString();
     }
 
-    /** Returns true if the bot is connected and not queued (able to act in-game). */
-    public boolean canAct() {
+        public boolean canAct() {
         return connected && !inQueue;
     }
 
-    /** Returns a safe placeholder state representing a disconnected proxy. */
-    public static WorldState disconnected() {
+        public static WorldState disconnected() {
         return new WorldState(false, false, 0, 0, 0, 0, 0, 0,
             "unknown", null, false, "", 0, 0, java.util.List.of());
     }
