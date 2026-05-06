@@ -30,6 +30,8 @@ import com.zenith.plugin.opencraft.ratelimit.RateLimiter;
 import com.zenith.plugin.opencraft.ratelimit.RateLimitResult;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import org.jspecify.annotations.Nullable;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandPacket;
+import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatCommandSignedPacket;
 import org.geysermc.mcprotocollib.protocol.packet.ingame.serverbound.ServerboundChatPacket;
 
 import java.util.Optional;
@@ -38,6 +40,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
+
+import static com.zenith.Globals.CACHE;
+import static com.zenith.Globals.CONFIG;
 
 public final class ChatHandler {
 
@@ -382,13 +387,36 @@ public final class ChatHandler {
                 logger.debug("[OpenCraft] Client disconnected; dropping whisper to {}.", username);
                 return;
             }
-            final String whisperCommand = com.zenith.Globals.CONFIG.client.extra.whisperCommand;
-            debug("send.whisper", "cmd=/" + whisperCommand + " target=" + username + " message=" + safe);
-            client.sendAsync(ChatUtil.getWhisperChatPacket(username, safe));
+            final String whisperCommand = CONFIG.client.extra.whisperCommand;
+            final String command = buildWhisperCommand(username, safe);
+            if (command.isBlank()) {
+                debug("send.drop", "blank whisper command");
+                return;
+            }
+            final boolean signable = CONFIG.client.chatSigning.signCommands
+                && CACHE.getChatCache().isSignableCommand(command);
+            final boolean signingAvailable = CACHE.getChatCache().canUseChatSigning();
+            debug("send.whisper", "cmd=/" + whisperCommand
+                + " target=" + username
+                + " signable=" + signable
+                + " signingAvailable=" + signingAvailable
+                + " message=" + safe);
+            if (signable) {
+                client.sendAsync(new ServerboundChatCommandSignedPacket(command));
+            } else {
+                client.sendAsync(new ServerboundChatCommandPacket(command));
+            }
         } catch (final Exception e) {
             debug("send.error", "whisper " + e.getMessage());
             logger.warn("[OpenCraft] Failed to send whisper to {}: {}", username, e.getMessage());
         }
+    }
+
+    private String buildWhisperCommand(final String username, final String message) {
+        final String raw = "/" + CONFIG.client.extra.whisperCommand + " " + username + " " + message;
+        final String sanitized = ChatUtil.sanitizeChatMessage(raw);
+        if (sanitized.length() <= 1 || sanitized.charAt(0) != '/') return "";
+        return sanitized.substring(1);
     }
 
     private void localEchoWhisper(final String username, final String message) {
