@@ -107,8 +107,9 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
             logger.warn("[OpenCraft] Config: 'timeoutSeconds'={} < 1; clamping to 30.", cfg.timeoutSeconds);
             cfg.timeoutSeconds = 30;
         }
-        if (System.getenv(cfg.apiKeyEnvVar) == null) {
-            logger.warn("[OpenCraft] WARNING: Environment variable '{}' is not set. " +
+        final String apiKey = System.getenv(cfg.apiKeyEnvVar);
+        if (apiKey == null || apiKey.isBlank()) {
+            logger.warn("[OpenCraft] WARNING: Environment variable '{}' is not set or is blank. " +
                 "The plugin will fail on the first LLM request.", cfg.apiKeyEnvVar);
         }
     }
