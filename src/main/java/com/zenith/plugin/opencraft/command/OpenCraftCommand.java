@@ -332,6 +332,7 @@ public class OpenCraftCommand extends Command {
                     .addField("userHourlyLimit",     String.valueOf(config.userHourlyLimit),            true)
                     .addField("allowedCommands",     config.allowedCommands.size() + " entries",        true)
                     .addField("discordAuditEnabled", String.valueOf(config.discordAuditEnabled),        true)
+                    .addField("discordDebugEnabled", String.valueOf(config.discordDebugEnabled),        true)
                     .addField("users",               config.users.size() + " entries",                  true);
                 return OK;
             }));

@@ -63,4 +63,15 @@ class DiscordAuditPayloadTest {
         assertNull(payload.commandId());
         assertNull(payload.commandExplanation());
     }
+
+    @Test
+    void debug_payloadUsesStageAndDetail() {
+        final DiscordAuditPayload payload = DiscordAuditPayload.debug(
+            "req-debug", "provider.error", "HTTP 401: bad key", "openai"
+        );
+        assertEquals("DEBUG_TRACE", payload.eventType());
+        assertEquals("provider.error", payload.debugStage());
+        assertEquals("HTTP 401: bad key", payload.executionResult());
+        assertEquals("debug", payload.authorizationResult());
+    }
 }

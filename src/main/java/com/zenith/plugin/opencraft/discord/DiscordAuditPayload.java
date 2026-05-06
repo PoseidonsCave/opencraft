@@ -18,6 +18,7 @@ public record DiscordAuditPayload(
     @Nullable String responseExcerpt,
     @Nullable String commandId,
     @Nullable String commandExplanation,
+    @Nullable String debugStage,
     String     authorizationResult,     // "allowed" | "denied" | "pending"
     @Nullable String executionResult,
     @Nullable String providerName
@@ -52,8 +53,32 @@ public record DiscordAuditPayload(
             sanitise(responseExcerpt),
             intent != null ? intent.commandId() : null,
             intent != null ? sanitise(intent.explanation()) : null,
+            null,
             authResult,
             sanitise(executionResult),
+            providerName
+        );
+    }
+
+    public static DiscordAuditPayload debug(final String requestId,
+                                            final String stage,
+                                            final String detail,
+                                            @Nullable final String providerName) {
+        return new DiscordAuditPayload(
+            Instant.now(),
+            sanitise(requestId),
+            "DEBUG_TRACE",
+            "system",
+            null,
+            "SYSTEM",
+            null,
+            null,
+            null,
+            null,
+            null,
+            sanitise(stage),
+            "debug",
+            sanitise(detail),
             providerName
         );
     }
