@@ -3,6 +3,7 @@ package com.zenith.plugin.opencraft.intent;
 import com.zenith.command.api.CommandContext;
 import com.zenith.command.api.CommandSources;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
+import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.audit.AuditEvent;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
 import com.zenith.plugin.opencraft.auth.UserIdentity;
@@ -23,9 +24,11 @@ import java.util.regex.Pattern;
 
 public final class CommandExecutor {
     private static final Pattern SAFE_ARG = Pattern.compile("[^a-zA-Z0-9_\\-.]");
+    private static final String INTERNAL_PREFIX = "@internal:";
 
     private final CommandAllowlist commandAllowlist;
     private final OpenCraftConfig  config;
+    private final PatrolService    patrolService;
     private final AuditLogger      auditLogger;
     private final DiscordNotifier  discordNotifier;
     private final ComponentLogger  logger;
@@ -35,11 +38,13 @@ public final class CommandExecutor {
 
     public CommandExecutor(final OpenCraftConfig config,
                            final CommandAllowlist commandAllowlist,
+                           final PatrolService patrolService,
                            final AuditLogger auditLogger,
                            final DiscordNotifier discordNotifier,
                            final ComponentLogger logger) {
         this.config           = config;
         this.commandAllowlist = commandAllowlist;
+        this.patrolService    = patrolService;
         this.auditLogger      = auditLogger;
         this.discordNotifier  = discordNotifier;
         this.logger           = logger;
@@ -131,9 +136,14 @@ public final class CommandExecutor {
             requestId, identity.auditLabel(), def.commandId(), command);
 
         try {
-            COMMAND.execute(CommandContext.create(command, CommandSources.TERMINAL));
+            final String rawResult;
+            if (def.zenithCommand().startsWith(INTERNAL_PREFIX)) {
+                rawResult = executeInternal(def.commandId(), intent.arguments(), identity, requestId);
+            } else {
+                COMMAND.execute(CommandContext.create(command, CommandSources.TERMINAL));
+                rawResult = "[command dispatched: " + def.commandId() + "]";
+            }
 
-            final String rawResult = "[command dispatched: " + def.commandId() + "]";
             final String redacted  = redact(rawResult, def.redactFields());
 
             auditLogger.log(AuditEvent.commandExecuted(requestId, identity, intent.commandId(), redacted));
@@ -147,6 +157,32 @@ public final class CommandExecutor {
             discordNotifier.notifyCommandFailed(requestId, identity, intent, e.getMessage());
             return ExecutionResult.failed("[OC] The command could not be completed. See server logs.");
         }
+    }
+
+    private String executeInternal(final String commandId,
+                                   final Map<String, String> args,
+                                   final UserIdentity identity,
+                                   final String requestId) {
+        return switch (commandId) {
+            case "patrol.once.current" ->
+                patrolService.patrolOnceCurrent(requestId, identity,
+                    Integer.parseInt(args.get("radius").strip()));
+            case "patrol.schedule.current" ->
+                patrolService.scheduleCurrent(
+                    requestId,
+                    identity,
+                    args.get("taskId").strip(),
+                    Integer.parseInt(args.get("radius").strip()),
+                    args.get("startDelay").strip(),
+                    args.get("repeatDelay").strip()
+                );
+            case "patrol.cancel" ->
+                patrolService.cancel(args.get("taskId").strip());
+            case "patrol.list" ->
+                patrolService.list();
+            default ->
+                throw new IllegalArgumentException("Unknown internal command: " + commandId);
+        };
     }
 
         private static String validateArguments(final Map<String, String> args,

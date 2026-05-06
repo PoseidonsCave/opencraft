@@ -15,6 +15,17 @@ public record WorldState(
     float   pitch,
     String  gameMode,
     @Nullable Float health,
+    long    dayTimeTicks,
+    String  timeOfDay,
+    String  weather,
+    boolean antiAfkEnabled,
+    boolean antiAfkWalk,
+    boolean antiAfkJump,
+    boolean antiAfkSafeWalk,
+    boolean antiAfkRotate,
+    boolean antiAfkSwing,
+    boolean antiAfkSneak,
+    List<String> patrolSummaries,
     boolean pathfinderActive,
     String  pathfinderGoalDesc,
     int     nearbyPlayerCount,
@@ -47,6 +58,32 @@ public record WorldState(
         if (health != null) {
             sb.append("  Health        : ").append(String.format("%.1f/20.0", health)).append("\n");
         }
+        if (!timeOfDay.isBlank()) {
+            sb.append("  In-game time  : ").append(timeOfDay);
+            if (dayTimeTicks >= 0) {
+                sb.append(" [").append(dayTimeTicks).append(" ticks]");
+            }
+            sb.append("\n");
+        }
+        if (!weather.isBlank()) {
+            sb.append("  Weather       : ").append(weather).append("\n");
+        }
+        sb.append("  AntiAFK       : ").append(antiAfkEnabled ? "enabled" : "disabled").append("\n");
+        if (antiAfkEnabled) {
+            sb.append("  AntiAFK modes : ")
+                .append("walk=").append(antiAfkWalk)
+                .append(", jump=").append(antiAfkJump)
+                .append(", safeWalk=").append(antiAfkSafeWalk)
+                .append(", rotate=").append(antiAfkRotate)
+                .append(", swing=").append(antiAfkSwing)
+                .append(", sneak=").append(antiAfkSneak)
+                .append("\n");
+        }
+        if (!patrolSummaries.isEmpty()) {
+            sb.append("  Patrol tasks  : ").append(String.join(" | ", patrolSummaries)).append("\n");
+        } else {
+            sb.append("  Patrol tasks  : none\n");
+        }
 
         sb.append("  Pathfinder    : ")
             .append(pathfinderActive ? "active — " + pathfinderGoalDesc : "idle").append("\n");
@@ -70,6 +107,9 @@ public record WorldState(
 
         public static WorldState disconnected() {
         return new WorldState(false, false, 0, 0, 0, 0, 0, 0,
-            "unknown", null, false, "", 0, 0, java.util.List.of());
+            "unknown", null, -1, "", "",
+            false, false, false, false, false, false, false,
+            java.util.List.of(),
+            false, "", 0, 0, java.util.List.of());
     }
 }

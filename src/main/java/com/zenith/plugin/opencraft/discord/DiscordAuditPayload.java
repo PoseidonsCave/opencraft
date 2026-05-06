@@ -82,4 +82,30 @@ public record DiscordAuditPayload(
             providerName
         );
     }
+
+    public static DiscordAuditPayload milestone(final String requestId,
+                                                @Nullable final String username,
+                                                @Nullable final String uuid,
+                                                @Nullable final String role,
+                                                final String sourceType,
+                                                final String detail,
+                                                @Nullable final String providerName) {
+        return new DiscordAuditPayload(
+            Instant.now(),
+            sanitise(requestId),
+            "AUTOMATION_MILESTONE",
+            sanitise(username == null ? "system" : username),
+            sanitise(uuid),
+            sanitise(role == null ? "SYSTEM" : role),
+            sanitise(sourceType),
+            null,
+            null,
+            null,
+            null,
+            null,
+            "allowed",
+            sanitise(detail),
+            providerName
+        );
+    }
 }

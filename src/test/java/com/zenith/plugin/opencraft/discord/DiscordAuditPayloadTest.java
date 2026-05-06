@@ -74,4 +74,16 @@ class DiscordAuditPayloadTest {
         assertEquals("HTTP 401: bad key", payload.executionResult());
         assertEquals("debug", payload.authorizationResult());
     }
+
+    @Test
+    void milestone_payloadUsesSystemDefaults() {
+        final DiscordAuditPayload payload = DiscordAuditPayload.milestone(
+            "req-patrol", null, null, null, "patrol", "Patrol finished.", "openai"
+        );
+        assertEquals("AUTOMATION_MILESTONE", payload.eventType());
+        assertEquals("system", payload.username());
+        assertEquals("SYSTEM", payload.role());
+        assertEquals("patrol", payload.sourceType());
+        assertEquals("Patrol finished.", payload.executionResult());
+    }
 }

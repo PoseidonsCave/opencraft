@@ -1,6 +1,7 @@
 package com.zenith.plugin.opencraft.intent;
 
 import com.zenith.plugin.opencraft.OpenCraftConfig;
+import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.auth.UserIdentity;
 import com.zenith.plugin.opencraft.auth.UserRole;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
@@ -25,6 +26,7 @@ class CommandExecutorTest {
     private CommandExecutor   executor;
     private AuditLogger       auditLogger;
     private DiscordNotifier   discordNotifier;
+    private PatrolService     patrolService;
 
     @BeforeEach
     void setUp() {
@@ -60,8 +62,9 @@ class CommandExecutorTest {
         allowlist       = new CommandAllowlist(config);
         auditLogger     = mock(AuditLogger.class);
         discordNotifier = mock(DiscordNotifier.class);
+        patrolService   = new PatrolService(mock(ComponentLogger.class), discordNotifier);
 
-        executor = new CommandExecutor(config, allowlist, auditLogger, discordNotifier,
+        executor = new CommandExecutor(config, allowlist, patrolService, auditLogger, discordNotifier,
             mock(ComponentLogger.class));
     }
 
@@ -147,5 +150,27 @@ class CommandExecutorTest {
     void redact_emptyFields_unchanged() {
         final String text = "some output";
         assertEquals(text, CommandExecutor.redact(text, List.of()));
+    }
+
+    @Test
+    void internalPatrolList_executesWithoutTerminalCommand() {
+        final OpenCraftConfig.AllowedCommandConfig internal = new OpenCraftConfig.AllowedCommandConfig();
+        internal.commandId = "patrol.list";
+        internal.description = "List patrols";
+        internal.zenithCommand = "@internal:patrol.list";
+        internal.roleRequired = "admin";
+        config.allowedCommands = List.of(internal);
+        allowlist = new CommandAllowlist(config);
+        executor = new CommandExecutor(config, allowlist, patrolService, auditLogger, discordNotifier,
+            mock(ComponentLogger.class));
+
+        final ExecutionResult result = executor.execute(
+            new CommandIntent("patrol.list", Map.of(), "list patrols"),
+            admin(),
+            "req-9"
+        );
+
+        assertEquals(ExecutionResult.Status.SUCCESS, result.status());
+        assertTrue(result.message().contains("No patrols are scheduled."));
     }
 }

@@ -32,7 +32,7 @@ public final class CommandAllowlist {
                 ))
                 .toList()
         );
-        if (config.operationsEnabled && config.baselineOperationsEnabled) {
+        if (config.baselineOperationsEnabled) {
             final var operatorIds = defs.stream().map(CommandDefinition::commandId).collect(
                 java.util.stream.Collectors.toSet());
             BaselineOperations.definitions().stream()

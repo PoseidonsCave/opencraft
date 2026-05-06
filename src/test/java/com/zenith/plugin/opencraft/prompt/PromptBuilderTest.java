@@ -99,15 +99,36 @@ class PromptBuilderTest {
     void prompt_containsRole() {
         final String memberPrompt = builder.build(member(), "req-8", defaultWorldState());
         assertTrue(memberPrompt.contains("member"));
+        assertTrue(memberPrompt.contains("not authorized to use admin tools"));
 
         final String adminPrompt = builder.build(admin(), "req-9", defaultWorldState());
         assertTrue(adminPrompt.contains("admin"));
+        assertTrue(adminPrompt.contains("authorized to use admin tools"));
     }
 
     @Test
     void prompt_containsWorldStateBlock() {
         final String prompt = builder.build(member(), "req-12", defaultWorldState());
         assertTrue(prompt.contains("WORLD STATE"), "Prompt must contain world state block");
+    }
+
+    @Test
+    void prompt_allowsWorldStateGroundedQuestions() {
+        final String prompt = builder.build(admin(), "req-13", defaultWorldState());
+        assertTrue(prompt.contains("WORLD STATE block"));
+        assertTrue(prompt.contains("local in-game facts"));
+    }
+
+    @Test
+    void adminPrompt_prefersClarificationForRecurringRequests() {
+        config.operationsEnabled = true;
+        builder = new PromptBuilder(config, new CommandAllowlist(config));
+
+        final String prompt = builder.build(admin(), "req-14", defaultWorldState());
+        assertTrue(prompt.contains("create a recurring task"));
+        assertTrue(prompt.contains("one-time action or a"));
+        assertTrue(prompt.contains("recurring task, and include the cadence or radius you inferred"));
+        assertTrue(prompt.contains("ZenithProxy's native task commands"));
     }
 
     @Test

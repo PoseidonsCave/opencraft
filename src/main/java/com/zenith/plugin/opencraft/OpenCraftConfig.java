@@ -46,7 +46,7 @@ public class OpenCraftConfig {
     public boolean updateAutoDownload = false;
         public String updateChannel = "stable";
         public boolean operationsEnabled = false;
-        public boolean baselineOperationsEnabled = false;
+        public boolean baselineOperationsEnabled = true;
         public int operationConfirmationTimeoutSeconds = 120;
         public int operationCostWarnThreshold = 2000;
         public int maxOperationSteps = 10;

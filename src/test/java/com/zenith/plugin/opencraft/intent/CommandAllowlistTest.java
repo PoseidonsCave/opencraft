@@ -13,6 +13,7 @@ class CommandAllowlistTest {
 
     private OpenCraftConfig configWith(final String... ids) {
         final OpenCraftConfig cfg = new OpenCraftConfig();
+        cfg.baselineOperationsEnabled = false;
         cfg.allowedCommands = new java.util.ArrayList<>();
         for (final String id : ids) {
             final OpenCraftConfig.AllowedCommandConfig c = new OpenCraftConfig.AllowedCommandConfig();
@@ -43,6 +44,7 @@ class CommandAllowlistTest {
     @Test
     void emptyConfig_isEmpty() {
         final OpenCraftConfig cfg = new OpenCraftConfig();
+        cfg.baselineOperationsEnabled = false;
         cfg.allowedCommands = List.of();
         final CommandAllowlist list = new CommandAllowlist(cfg);
         assertTrue(list.isEmpty());
@@ -51,6 +53,7 @@ class CommandAllowlistTest {
     @Test
     void commandsMissingZenithCommand_filtered() {
         final OpenCraftConfig cfg = new OpenCraftConfig();
+        cfg.baselineOperationsEnabled = false;
         final OpenCraftConfig.AllowedCommandConfig c = new OpenCraftConfig.AllowedCommandConfig();
         c.commandId = "stash.scan";
         c.zenithCommand = "";
@@ -66,6 +69,26 @@ class CommandAllowlistTest {
         assertEquals(1, tools.size());
         assertEquals("stash.scan", tools.get(0).commandId());
         assertTrue(tools.get(0).description().startsWith("desc-"));
+    }
+
+    @Test
+    void baselineOperations_presentWithoutOperationsMode() {
+        final OpenCraftConfig cfg = new OpenCraftConfig();
+        cfg.operationsEnabled = false;
+        cfg.baselineOperationsEnabled = true;
+        cfg.allowedCommands = List.of();
+
+        final CommandAllowlist list = new CommandAllowlist(cfg);
+        assertTrue(list.find("pathfinder.thisway").isPresent());
+        assertTrue(list.find("pathfinder.near").isPresent());
+        assertTrue(list.find("patrol.once.current").isPresent());
+        assertTrue(list.find("patrol.schedule.current").isPresent());
+        assertTrue(list.find("patrol.list").isPresent());
+        assertTrue(list.find("status.query").isPresent());
+        assertTrue(list.find("antiafk.status").isPresent());
+        assertTrue(list.find("antiafk.jump.toggle").isPresent());
+        assertTrue(list.find("tasks.interval.pathfinder.near").isPresent());
+        assertTrue(list.find("tasks.delete").isPresent());
     }
 
     @Test
