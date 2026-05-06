@@ -370,6 +370,7 @@ public final class ChatHandler {
         if (!isSafeUsername(username)) return;
         try {
             final String safe = ChatUtil.sanitizeChatMessage(message.replaceAll("[\r\n]", " ").strip());
+            localEchoWhisper(username, safe);
             final var client = Proxy.getInstance().getClient();
             if (client == null) {
                 debug("send.drop", "no active client for whisper");
@@ -387,6 +388,16 @@ public final class ChatHandler {
         } catch (final Exception e) {
             debug("send.error", "whisper " + e.getMessage());
             logger.warn("[OpenCraft] Failed to send whisper to {}: {}", username, e.getMessage());
+        }
+    }
+
+    private void localEchoWhisper(final String username, final String message) {
+        final var connections = Proxy.getInstance().getActiveConnections().getArray();
+        if (connections.length == 0) return;
+        final String echo = "[OpenCraft -> " + username + "] " + message;
+        debug("send.local", echo);
+        for (int i = 0; i < connections.length; i++) {
+            connections[i].sendAsyncMessage(echo);
         }
     }
 

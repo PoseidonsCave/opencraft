@@ -25,7 +25,7 @@ class AuthorizationServiceTest {
         config = new OpenCraftConfig();
         config.users = Map.of(
             ADMIN_UUID.toString(), "admin",
-            MEMBER_UUID.toString().replace("-", ""), "member"  // no-dash variant
+            MEMBER_UUID.toString().replace("-", ""), "member"
         );
         config.allowUsernameOnlyFallback = false;
         service = new AuthorizationService(config, mock(net.kyori.adventure.text.logger.slf4j.ComponentLogger.class));
@@ -88,7 +88,7 @@ class AuthorizationServiceTest {
     @Test
     void uuidPresentButNotWhitelisted_doesNotFallThroughToUsername() {
         config.users = Map.of(
-            "Notch", "admin"  // username key only
+            "Notch", "admin"
         );
         service = new AuthorizationService(config, mock(net.kyori.adventure.text.logger.slf4j.ComponentLogger.class));
         final Optional<UserIdentity> result = service.resolve(UUID.randomUUID(), "Notch");

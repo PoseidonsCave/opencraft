@@ -13,13 +13,13 @@ public record DiscordAuditPayload(
     String     username,
     @Nullable String uuid,
     String     role,
-    @Nullable String sourceType,        // "whisper" | "public_chat"
+    @Nullable String sourceType,
     @Nullable String promptExcerpt,
     @Nullable String responseExcerpt,
     @Nullable String commandId,
     @Nullable String commandExplanation,
     @Nullable String debugStage,
-    String     authorizationResult,     // "allowed" | "denied" | "pending"
+    String     authorizationResult,
     @Nullable String executionResult,
     @Nullable String providerName
 ) {

@@ -134,12 +134,12 @@ public final class DiscordNotifier {
 
     private static int embedColor(final String type) {
         return switch (type) {
-            case "REQUEST_DENIED", "COMMAND_DENIED", "COMMAND_FAILED" -> 0xFF0000; // red
-            case "COMMAND_EXECUTED", "RESPONSE_SENT"                  -> 0x00CC44; // green
-            case "COMMAND_PENDING"                                     -> 0xFFAA00; // orange
-            case "PROVIDER_ERROR"                                      -> 0xFF6600; // dark orange
-            case "DEBUG_TRACE"                                         -> 0x3399FF; // blue
-            default                                                    -> 0x5865F2; // Discord blurple
+            case "REQUEST_DENIED", "COMMAND_DENIED", "COMMAND_FAILED" -> 0xFF0000;
+            case "COMMAND_EXECUTED", "RESPONSE_SENT"                  -> 0x00CC44;
+            case "COMMAND_PENDING"                                    -> 0xFFAA00;
+            case "PROVIDER_ERROR"                                     -> 0xFF6600;
+            case "DEBUG_TRACE"                                        -> 0x3399FF;
+            default                                                   -> 0x5865F2;
         };
     }
 }

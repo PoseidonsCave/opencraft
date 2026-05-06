@@ -113,7 +113,7 @@ class CommandExecutorTest {
     @Test
     void missingRequiredArgument_denied() {
         final CommandIntent intent = new CommandIntent("stash.label",
-            Map.of("x","100","y","64"), "label"); // missing z and label
+            Map.of("x","100","y","64"), "label");
         final ExecutionResult result = executor.execute(intent, admin(), "req-6");
         assertEquals(ExecutionResult.Status.DENIED, result.status());
     }
