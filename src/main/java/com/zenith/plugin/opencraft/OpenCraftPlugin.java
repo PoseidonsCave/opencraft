@@ -83,14 +83,18 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
             config.publicChatEnabled, config.whisperEnabled);
     }
 
-        private static void validateConfig(final OpenCraftConfig cfg) {
+    private static void validateConfig(final OpenCraftConfig cfg) {
         if (cfg.prefix == null || cfg.prefix.isBlank()) {
             logger.warn("[OpenCraft] Config: 'prefix' was blank; falling back to '!oc'.");
             cfg.prefix = "!oc";
+        } else {
+            cfg.prefix = cfg.prefix.strip();
         }
         if (cfg.apiKeyEnvVar == null || cfg.apiKeyEnvVar.isBlank()) {
             logger.warn("[OpenCraft] Config: 'apiKeyEnvVar' was blank; falling back to 'OPENCRAFT_API_KEY'.");
             cfg.apiKeyEnvVar = "OPENCRAFT_API_KEY";
+        } else {
+            cfg.apiKeyEnvVar = cfg.apiKeyEnvVar.strip();
         }
         if (cfg.whisperChunkSize < 10 || cfg.whisperChunkSize > 200) {
             final int clamped = Math.max(10, Math.min(200, cfg.whisperChunkSize));

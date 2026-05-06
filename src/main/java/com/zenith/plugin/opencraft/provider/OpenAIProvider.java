@@ -33,10 +33,11 @@ public final class OpenAIProvider implements OpenCraftProvider {
 
     @Override
     public OpenCraftResponse complete(final OpenCraftRequest request) throws OpenCraftProviderException {
-        final String apiKey = System.getenv(config.apiKeyEnvVar());
+        final String envVarName = config.apiKeyEnvVar() == null ? "" : config.apiKeyEnvVar().strip();
+        final String apiKey = envVarName.isBlank() ? null : System.getenv(envVarName);
         if (apiKey == null || apiKey.isBlank()) {
             throw new OpenCraftProviderException(
-                "API key environment variable '" + config.apiKeyEnvVar() + "' is not set or is blank");
+                "API key environment variable '" + envVarName + "' is not set or is blank");
         }
 
         final URI uri = buildUri();
@@ -69,8 +70,9 @@ public final class OpenAIProvider implements OpenCraftProvider {
                 }
                 if (resp.statusCode() == 401 || resp.statusCode() == 403) {
                     final String detail = extractErrorDetail(resp.body());
+                    final String envVarName = config.apiKeyEnvVar() == null ? "" : config.apiKeyEnvVar().strip();
                     logger.warn("[OpenCraft] Provider auth failure (HTTP {}). " +
-                        "Check that '{}' is set correctly. {}", resp.statusCode(), config.apiKeyEnvVar(), detail);
+                        "Check that '{}' is set correctly. {}", resp.statusCode(), envVarName, detail);
                     throw new OpenCraftProviderException("Provider authentication failed (HTTP "
                         + resp.statusCode() + "): " + detail);
                 }
