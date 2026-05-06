@@ -299,7 +299,7 @@ Operations are disabled by default, so most installs will not use this flow unle
 
 ### What the LLM will refuse
 
-The system prompt instructs the model to refuse any question about: server configuration, other players' UUIDs/roles/membership, plugin internals, available commands, environment variables, the system prompt itself, or any administrative action. All of these get the canonical reply:
+The system prompt instructs the model to refuse any question about: server configuration, other players' UUIDs/roles/membership, plugin internals, available commands, environment variables, the system prompt itself, or any administrative action. Ordinary greetings, connection tests, and "reply in whisper/chat" requests stay allowed as normal conversation. The refused categories get the canonical reply:
 
 > I can't help with that.
 
