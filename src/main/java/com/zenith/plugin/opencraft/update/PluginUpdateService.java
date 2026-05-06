@@ -161,8 +161,8 @@ public final class PluginUpdateService {
         final boolean prerelease = release.has("prerelease") && release.get("prerelease").getAsBoolean();
         return switch (channel.toLowerCase(Locale.ROOT)) {
             case "dev"  -> true;
-            case "beta" -> true; // includes both stable and beta
-            default     -> !prerelease; // stable only
+            case "beta" -> true;
+            default     -> !prerelease;
         };
     }
 

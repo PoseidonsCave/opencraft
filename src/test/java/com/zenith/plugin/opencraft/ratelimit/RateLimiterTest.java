@@ -46,7 +46,7 @@ class RateLimiterTest {
 
     @Test
     void hourlyLimit_exceeded_denied() {
-        config.userCooldownMs = 0; // disable cooldown for this test
+        config.userCooldownMs = 0;
         rateLimiter = new RateLimiter(config);
         final String user = "user-limit";
         for (int i = 0; i < config.userHourlyLimit; i++) {

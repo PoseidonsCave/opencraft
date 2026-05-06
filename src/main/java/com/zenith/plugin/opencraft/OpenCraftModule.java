@@ -43,7 +43,7 @@ public class OpenCraftModule extends Module {
     public PacketHandlerCodec registerClientPacketHandlerCodec() {
         return PacketHandlerCodec.clientBuilder()
             .setId("opencraft")
-            .setPriority(1000) // run after standard handlers — read-only observation
+            .setPriority(1000)
             .state(ProtocolState.GAME, PacketHandlerStateCodec.clientBuilder()
                 .inbound(ClientboundPlayerChatPacket.class, new PlayerChatTap(chatHandler))
                 .inbound(ClientboundSystemChatPacket.class, new SystemChatTap(chatHandler))

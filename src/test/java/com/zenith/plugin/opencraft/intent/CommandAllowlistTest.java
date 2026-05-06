@@ -53,7 +53,7 @@ class CommandAllowlistTest {
         final OpenCraftConfig cfg = new OpenCraftConfig();
         final OpenCraftConfig.AllowedCommandConfig c = new OpenCraftConfig.AllowedCommandConfig();
         c.commandId = "stash.scan";
-        c.zenithCommand = ""; // invalid — must be filtered
+        c.zenithCommand = "";
         cfg.allowedCommands = List.of(c);
         final CommandAllowlist list = new CommandAllowlist(cfg);
         assertTrue(list.isEmpty(), "Commands with blank zenithCommand must be filtered");
@@ -72,7 +72,7 @@ class CommandAllowlistTest {
     void denyByDefault_inventedCommandId_notFound() {
         final CommandAllowlist list = new CommandAllowlist(configWith("stash.scan"));
         assertFalse(list.find("execute_shell_command").isPresent());
-        assertFalse(list.find("stash.scan ").isPresent()); // trailing space
-        assertFalse(list.find("STASH.SCAN").isPresent()); // case-sensitive
+        assertFalse(list.find("stash.scan ").isPresent());
+        assertFalse(list.find("STASH.SCAN").isPresent());
     }
 }

@@ -45,7 +45,7 @@ public final class OpenAIProvider implements OpenCraftProvider {
 
         final HttpRequest httpRequest = HttpRequest.newBuilder(uri)
             .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer " + apiKey)   // key used in-flight only
+            .header("Authorization", "Bearer " + apiKey)
             .timeout(Duration.ofSeconds(config.timeoutSeconds()))
             .POST(HttpRequest.BodyPublishers.ofString(body))
             .build();

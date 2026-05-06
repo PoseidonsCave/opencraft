@@ -28,7 +28,7 @@ class PromptBuilderTest {
         final OpenCraftConfig.AllowedCommandConfig cmd = new OpenCraftConfig.AllowedCommandConfig();
         cmd.commandId    = "stash.scan";
         cmd.description  = "Scan the stash region";
-        cmd.zenithCommand = "stash scan"; // must NOT appear in admin prompt
+        cmd.zenithCommand = "stash scan";
         cmd.roleRequired = "admin";
         config.allowedCommands = List.of(cmd);
 
@@ -126,4 +126,3 @@ class PromptBuilderTest {
             "Security rules must always be present regardless of operator override");
     }
 }
-
