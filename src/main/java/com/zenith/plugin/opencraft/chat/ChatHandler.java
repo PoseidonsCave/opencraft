@@ -360,17 +360,29 @@ public final class ChatHandler {
         }
     }
 
+    public boolean debugWhisper(final String username, final String message) {
+        if (!isSafeUsername(username) || message == null || message.isBlank()) return false;
+        whisper(username, message);
+        return true;
+    }
+
     private void whisper(final String username, final String message) {
         if (!isSafeUsername(username)) return;
         try {
-            final String safe = message.replaceAll("[\r\n]", " ").strip();
+            final String safe = ChatUtil.sanitizeChatMessage(message.replaceAll("[\r\n]", " ").strip());
             final var client = Proxy.getInstance().getClient();
             if (client == null) {
                 debug("send.drop", "no active client for whisper");
                 logger.debug("[OpenCraft] No active client; dropping whisper to {}.", username);
                 return;
             }
-            debug("send.whisper", username + " <- " + safe);
+            if (!client.isConnected()) {
+                debug("send.drop", "client disconnected for whisper");
+                logger.debug("[OpenCraft] Client disconnected; dropping whisper to {}.", username);
+                return;
+            }
+            final String whisperCommand = com.zenith.Globals.CONFIG.client.extra.whisperCommand;
+            debug("send.whisper", "cmd=/" + whisperCommand + " target=" + username + " message=" + safe);
             client.sendAsync(ChatUtil.getWhisperChatPacket(username, safe));
         } catch (final Exception e) {
             debug("send.error", "whisper " + e.getMessage());

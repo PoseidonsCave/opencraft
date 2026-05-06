@@ -9,12 +9,14 @@ import com.zenith.command.api.CommandCategory;
 import com.zenith.command.api.CommandContext;
 import com.zenith.command.api.CommandSources;
 import com.zenith.command.api.CommandUsage;
+import com.zenith.Proxy;
 import com.zenith.plugin.opencraft.debug.ChatDebugRecorder;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
 import com.zenith.plugin.opencraft.OpenCraftModule;
 import com.zenith.plugin.opencraft.auth.UserRole;
 import com.zenith.plugin.opencraft.audit.AuditEvent;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
+import com.zenith.plugin.opencraft.chat.ChatHandler;
 import com.zenith.plugin.opencraft.update.PluginUpdateService;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 
@@ -36,13 +38,15 @@ public class OpenCraftCommand extends Command {
     private final ComponentLogger     logger;
     private final UserKeyResolver     userKeyResolver;
     private final ChatDebugRecorder   chatDebugRecorder;
+    private final ChatHandler         chatHandler;
 
     public OpenCraftCommand(final OpenCraftConfig config,
                             final OpenCraftModule module,
                             final PluginUpdateService updateService,
                             final AuditLogger auditLogger,
                             final ComponentLogger logger,
-                            final ChatDebugRecorder chatDebugRecorder) {
+                            final ChatDebugRecorder chatDebugRecorder,
+                            final ChatHandler chatHandler) {
         this.config        = config;
         this.module        = module;
         this.updateService = updateService;
@@ -50,6 +54,7 @@ public class OpenCraftCommand extends Command {
         this.logger        = logger;
         this.userKeyResolver = new UserKeyResolver(this::lookupProfileByUsername);
         this.chatDebugRecorder = chatDebugRecorder;
+        this.chatHandler   = chatHandler;
     }
 
     @Override
@@ -75,6 +80,7 @@ public class OpenCraftCommand extends Command {
                 "update stage",
                 "debug recent",
                 "debug clear",
+                "debug whisper USERNAME MESSAGE",
                 "audit prune",
                 "config"
             )
@@ -328,6 +334,30 @@ public class OpenCraftCommand extends Command {
                         .addField("model", config.model, true);
                     return OK;
                 }))
+                .then(literal("whisper")
+                    .then(argument("username", StringArgumentType.word())
+                        .then(argument("message", StringArgumentType.greedyString())
+                            .executes(c -> {
+                                final String username = StringArgumentType.getString(c, "username").strip();
+                                final String message = StringArgumentType.getString(c, "message").strip();
+                                final var client = Proxy.getInstance().getClient();
+                                final boolean clientConnected = client != null && client.isConnected();
+                                final String whisperCommand = com.zenith.Globals.CONFIG.client.extra.whisperCommand;
+                                if (!chatHandler.debugWhisper(username, message)) {
+                                    c.getSource().getEmbed()
+                                        .title("OpenCraft Whisper Debug")
+                                        .description("Could not queue a test whisper for that username or message.")
+                                        .errorColor();
+                                    return ERROR;
+                                }
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft Whisper Debug")
+                                    .description("Queued a test whisper. Run `/llm debug recent` to inspect the outbound event.")
+                                    .addField("target", username, true)
+                                    .addField("clientConnected", String.valueOf(clientConnected), true)
+                                    .addField("whisperCommand", whisperCommand, true);
+                                return OK;
+                            }))))
             )
             .then(literal("config").executes(c -> {
                 c.getSource().getEmbed()

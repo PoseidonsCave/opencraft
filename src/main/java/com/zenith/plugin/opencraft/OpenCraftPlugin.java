@@ -73,7 +73,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
 
         pluginAPI.registerModule(module);
         pluginAPI.registerCommand(new OpenCraftCommand(
-            config, module, updateService, auditLogger, logger, chatDebugRecorder
+            config, module, updateService, auditLogger, logger, chatDebugRecorder, chatHandler
         ));
 
         updateService.scheduleStartupCheck();
