@@ -7,6 +7,7 @@ import com.zenith.plugin.opencraft.audit.AuditLogger;
 import com.zenith.plugin.opencraft.auth.AuthorizationService;
 import com.zenith.plugin.opencraft.chat.ChatHandler;
 import com.zenith.plugin.opencraft.command.OpenCraftCommand;
+import com.zenith.plugin.opencraft.debug.ChatDebugRecorder;
 import com.zenith.plugin.opencraft.discord.DiscordNotifier;
 import com.zenith.plugin.opencraft.execute.OperationExecutor;
 import com.zenith.plugin.opencraft.intent.CommandAllowlist;
@@ -42,6 +43,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
     private static OperationExecutor         operationExecutor;
     private static PromptBuilder             promptBuilder;
     private static ChatHandler               chatHandler;
+    private static ChatDebugRecorder         chatDebugRecorder;
 
     @Override
     public void onLoad(final PluginAPI pluginAPI) {
@@ -59,17 +61,20 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
         commandExecutor   = new CommandExecutor(config, commandAllowlist, auditLogger, discordNotifier, logger);
         operationExecutor = new OperationExecutor(config, commandExecutor, auditLogger, logger);
         promptBuilder     = new PromptBuilder(config, commandAllowlist);
+        chatDebugRecorder = new ChatDebugRecorder();
 
         chatHandler = new ChatHandler(
             config, authService, rateLimiter, provider,
-            promptBuilder, commandExecutor, operationExecutor, auditLogger, discordNotifier, logger
+            promptBuilder, commandExecutor, operationExecutor, auditLogger, discordNotifier, logger, chatDebugRecorder
         );
 
         module        = new OpenCraftModule(config, chatHandler, logger);
         updateService = new PluginUpdateService(config, logger);
 
         pluginAPI.registerModule(module);
-        pluginAPI.registerCommand(new OpenCraftCommand(config, module, updateService, auditLogger, logger));
+        pluginAPI.registerCommand(new OpenCraftCommand(
+            config, module, updateService, auditLogger, logger, chatDebugRecorder
+        ));
 
         updateService.scheduleStartupCheck();
 
