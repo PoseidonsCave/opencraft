@@ -317,6 +317,20 @@ public class OpenCraftCommand extends Command {
                         .description("Cleared recent chat debug events.");
                     return OK;
                 }))
+                .then(literal("env").executes(c -> {
+                    final String envVarName = config.apiKeyEnvVar == null ? "" : config.apiKeyEnvVar.strip();
+                    final String envValue = envVarName.isBlank() ? null : System.getenv(envVarName);
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Env Debug")
+                        .addField("apiKeyEnvVar", envVarName.isBlank() ? "(blank)" : envVarName, false)
+                        .addField("envPresent", String.valueOf(envValue != null), true)
+                        .addField("envBlank", String.valueOf(envValue != null && envValue.isBlank()), true)
+                        .addField("envLength", envValue == null ? "0" : String.valueOf(envValue.length()), true)
+                        .addField("providerName", config.providerName, true)
+                        .addField("providerBaseUrl", config.providerBaseUrl, false)
+                        .addField("model", config.model, true);
+                    return OK;
+                }))
             )
             .then(literal("config").executes(c -> {
                 c.getSource().getEmbed()
