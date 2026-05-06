@@ -393,9 +393,12 @@ public final class ChatHandler {
 
     private void localEchoWhisper(final String username, final String message) {
         final var connections = Proxy.getInstance().getActiveConnections().getArray();
-        if (connections.length == 0) return;
-        final String echo = "[OpenCraft -> " + username + "] " + message;
-        debug("send.local", echo);
+        if (connections.length == 0) {
+            debug("send.local.skip", "no active connections");
+            return;
+        }
+        final String echo = "to " + username + ": " + message;
+        debug("send.local", "connections=" + connections.length + " " + echo);
         for (int i = 0; i < connections.length; i++) {
             connections[i].sendAsyncMessage(echo);
         }
