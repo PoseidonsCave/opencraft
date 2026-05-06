@@ -68,13 +68,17 @@ public final class OpenAIProvider implements OpenCraftProvider {
                     continue;
                 }
                 if (resp.statusCode() == 401 || resp.statusCode() == 403) {
+                    final String detail = extractErrorDetail(resp.body());
                     logger.warn("[OpenCraft] Provider auth failure (HTTP {}). " +
-                        "Check that '{}' is set correctly.", resp.statusCode(), config.apiKeyEnvVar());
-                    throw new OpenCraftProviderException("Provider authentication failed (HTTP " + resp.statusCode() + ")");
+                        "Check that '{}' is set correctly. {}", resp.statusCode(), config.apiKeyEnvVar(), detail);
+                    throw new OpenCraftProviderException("Provider authentication failed (HTTP "
+                        + resp.statusCode() + "): " + detail);
                 }
                 if (resp.statusCode() >= 400) {
-                    logger.warn("[OpenCraft] Provider returned HTTP {}.", resp.statusCode());
-                    throw new OpenCraftProviderException("Provider returned HTTP " + resp.statusCode());
+                    final String detail = extractErrorDetail(resp.body());
+                    logger.warn("[OpenCraft] Provider returned HTTP {}. {}", resp.statusCode(), detail);
+                    throw new OpenCraftProviderException("Provider returned HTTP "
+                        + resp.statusCode() + ": " + detail);
                 }
 
                 return parseResponse(resp.body(), requestId);
@@ -159,6 +163,38 @@ public final class OpenAIProvider implements OpenCraftProvider {
     private static String truncate(final String s, final int maxLen) {
         if (s == null) return "";
         return s.length() <= maxLen ? s : s.substring(0, maxLen);
+    }
+
+    private String extractErrorDetail(final String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            return "(empty error body)";
+        }
+        try {
+            final JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+            if (json != null) {
+                if (json.has("error") && json.get("error").isJsonObject()) {
+                    final JsonObject error = json.getAsJsonObject("error");
+                    final String message = getString(error, "message");
+                    final String type = getString(error, "type");
+                    if (!message.isBlank() && !type.isBlank()) {
+                        return truncate(type + ": " + message, 180);
+                    }
+                    if (!message.isBlank()) {
+                        return truncate(message, 180);
+                    }
+                }
+                final String message = getString(json, "message");
+                if (!message.isBlank()) {
+                    return truncate(message, 180);
+                }
+            }
+        } catch (final Exception ignored) {
+        }
+        return truncate(responseBody, 180);
+    }
+
+    private static String getString(final JsonObject obj, final String key) {
+        return (obj.has(key) && !obj.get(key).isJsonNull()) ? obj.get(key).getAsString() : "";
     }
 
     private void sleepForRetry(final int attempt) {

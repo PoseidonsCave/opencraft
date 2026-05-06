@@ -75,6 +75,11 @@ public final class DiscordNotifier {
             null, null, null, null, "failed", reason, config.providerName));
     }
 
+    public void notifyDebug(final String requestId, final String stage, final String detail) {
+        if (!config.discordAuditEnabled || !config.discordDebugEnabled) return;
+        send(DiscordAuditPayload.debug(requestId, stage, detail, config.providerName));
+    }
+
     private void send(final DiscordAuditPayload payload) {
         executor.execute(() -> {
             if (!isZenithDiscordAvailable()) {
@@ -103,6 +108,7 @@ public final class DiscordNotifier {
         addField(embed, "Auth Result", payload.authorizationResult(), true);
         addField(embed, "Source", payload.sourceType(), true);
         addField(embed, "Command", payload.commandId(), true);
+        addField(embed, "Debug Stage", payload.debugStage(), true);
         addField(embed, "Prompt", payload.promptExcerpt(), false);
         addField(embed, "Response", payload.responseExcerpt(), false);
         addField(embed, "Result", payload.executionResult(), false);
@@ -132,6 +138,7 @@ public final class DiscordNotifier {
             case "COMMAND_EXECUTED", "RESPONSE_SENT"                  -> 0x00CC44; // green
             case "COMMAND_PENDING"                                     -> 0xFFAA00; // orange
             case "PROVIDER_ERROR"                                      -> 0xFF6600; // dark orange
+            case "DEBUG_TRACE"                                         -> 0x3399FF; // blue
             default                                                    -> 0x5865F2; // Discord blurple
         };
     }

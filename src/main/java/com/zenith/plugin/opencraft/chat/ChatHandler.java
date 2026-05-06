@@ -7,6 +7,7 @@ import com.zenith.plugin.opencraft.audit.AuditEvent;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
 import com.zenith.plugin.opencraft.auth.AuthorizationService;
 import com.zenith.plugin.opencraft.auth.UserIdentity;
+import com.zenith.plugin.opencraft.debug.ChatDebugRecorder;
 import com.zenith.plugin.opencraft.discord.DiscordNotifier;
 import com.zenith.plugin.opencraft.execute.OperationExecutor;
 import com.zenith.plugin.opencraft.intent.CommandExecutor;
@@ -56,6 +57,7 @@ public final class ChatHandler {
     private final IntentParser         intentParser;
     private final WorldStateObserver   worldStateObserver;
     private final WhisperPatternMatcher whisperPatternMatcher;
+    private final ChatDebugRecorder    chatDebugRecorder;
     private final ExecutorService      llmExecutor;
     private final AtomicLong           reqCounter = new AtomicLong(0);
 
@@ -68,7 +70,8 @@ public final class ChatHandler {
                        final OperationExecutor operationExecutor,
                        final AuditLogger auditLogger,
                        final DiscordNotifier discordNotifier,
-                       final ComponentLogger logger) {
+                       final ComponentLogger logger,
+                       final ChatDebugRecorder chatDebugRecorder) {
         this.config             = config;
         this.authService        = authService;
         this.rateLimiter        = rateLimiter;
@@ -82,15 +85,27 @@ public final class ChatHandler {
         this.intentParser       = new IntentParser(logger);
         this.worldStateObserver = new WorldStateObserver(logger);
         this.whisperPatternMatcher = new WhisperPatternMatcher();
+        this.chatDebugRecorder  = chatDebugRecorder;
         this.llmExecutor        = Executors.newCachedThreadPool(
             r -> { final Thread t = new Thread(r, "opencraft-worker"); t.setDaemon(true); return t; }
         );
     }
 
-        public void onPlayerChat(final UUID senderUuid, final String rawMessage) {
+    private void debug(final String stage, final String detail) {
+        debug("debug", stage, detail);
+    }
+
+    private void debug(final String requestId, final String stage, final String detail) {
+        chatDebugRecorder.record(stage, detail);
+        discordNotifier.notifyDebug(requestId, stage, detail);
+    }
+
+    public void onPlayerChat(final UUID senderUuid, final String rawMessage) {
         final String stripped = ChatContentUtil.stripColorCodes(rawMessage);
         if (!stripped.startsWith(config.prefix)) return;
+        debug("public-chat.seen", stripped);
         if (!config.publicChatEnabled) {
+            debug("public-chat.ignored", "publicChatEnabled=false");
             logger.debug("[OpenCraft] Ignored prefixed public chat because publicChatEnabled=false.");
             return;
         }
@@ -108,6 +123,7 @@ public final class ChatHandler {
             whisperPatternMatcher.match(plain, config.whisperInboundPattern);
         if (whisperMatch == null) {
             if (plain.contains(config.prefix)) {
+                debug("whisper.unmatched", plain);
                 logger.debug("[OpenCraft] Ignored system chat containing prefix because it did not match whisperInboundPattern: {}",
                     plain);
             }
@@ -115,10 +131,15 @@ public final class ChatHandler {
         }
         final String senderName = whisperMatch.senderName();
         final String rawMessage = whisperMatch.rawMessage();
+        debug("whisper.matched", senderName + " -> " + rawMessage);
 
-        if (!rawMessage.startsWith(config.prefix)) return;
+        if (!rawMessage.startsWith(config.prefix)) {
+            debug("whisper.ignored", "missing prefix in message from " + senderName);
+            return;
+        }
         final String userInput = rawMessage.substring(config.prefix.length()).strip();
         final UUID uuid = resolveUuidByUsername(senderName);
+        debug("whisper.dispatch", senderName + " uuid=" + (uuid != null ? uuid : "missing"));
         handleRequest(uuid, senderName, userInput, "whisper");
     }
 
@@ -127,20 +148,25 @@ public final class ChatHandler {
                                 final String userInput,
                                 final String sourceType) {
         final String requestId = generateRequestId();
+        debug(requestId, "request.received", "user=" + username + " source=" + sourceType);
         if (!isSafeUsername(username)) {
+            debug(requestId, "request.rejected", "unsafe username");
             logger.debug("[OpenCraft] req={} Rejected message with unsafe username.", requestId);
             return;
         }
         final Optional<UserIdentity> identityOpt = authService.resolve(uuid, username);
         if (identityOpt.isPresent() && "confirm".equalsIgnoreCase(userInput)) {
+            debug(requestId, "request.confirm", "confirm");
             handleConfirm(identityOpt.get(), username, requestId, sourceType);
             return;
         }
         if (identityOpt.isPresent() && "cancel".equalsIgnoreCase(userInput)) {
+            debug(requestId, "request.cancel", "cancel");
             handleCancel(identityOpt.get(), username, requestId, sourceType);
             return;
         }
         if (identityOpt.isEmpty()) {
+            debug(requestId, "auth.denied", "not whitelisted");
             if (config.logDeniedAttempts) {
                 auditLogger.log(AuditEvent.requestDenied(requestId, username, "Not whitelisted"));
                 discordNotifier.notifyDenied(requestId, null, "Not whitelisted");
@@ -149,9 +175,11 @@ public final class ChatHandler {
         }
 
         final UserIdentity identity = identityOpt.get();
+        debug(requestId, "auth.allowed", "role=" + identity.role().name().toLowerCase());
         final String rateKey = uuid != null ? uuid.toString() : username;
         final RateLimitResult rateResult = rateLimiter.check(rateKey);
         if (!rateResult.allowed()) {
+            debug(requestId, "rate-limited", rateResult.reason());
             auditLogger.log(AuditEvent.rateLimited(requestId, identity, rateResult.reason()));
             respond(username, rateResult.reason(), sourceType);
             return;
@@ -159,10 +187,12 @@ public final class ChatHandler {
 
         rateLimiter.recordRequest(rateKey);
         if (!rateLimiter.acquireConcurrencySlot()) {
+            debug(requestId, "request.busy", "no concurrency slot");
             respond(username, "The assistant is busy. Please try again shortly.", sourceType);
             return;
         }
 
+        debug(requestId, "request.dispatched", "queued for provider");
         llmExecutor.execute(() -> {
             try {
                 processRequest(identity, userInput, sourceType, requestId);
@@ -176,6 +206,7 @@ public final class ChatHandler {
                                  final String userInput,
                                  final String sourceType,
                                  final String requestId) {
+        debug(requestId, "provider.start", "model=" + config.model);
         auditLogger.log(AuditEvent.promptReceived(requestId, identity, userInput));
         discordNotifier.notifyPromptReceived(requestId, identity, userInput, sourceType);
 
@@ -187,6 +218,7 @@ public final class ChatHandler {
         try {
             response = provider.complete(req);
         } catch (final OpenCraftProviderException e) {
+            debug(requestId, "provider.error", e.getMessage());
             logger.warn("[OpenCraft] req={} Provider error: {}", requestId, e.getMessage());
             auditLogger.log(AuditEvent.providerError(requestId, identity, e.getMessage()));
             discordNotifier.notifyProviderError(requestId, identity, e.getMessage());
@@ -194,11 +226,13 @@ public final class ChatHandler {
             return;
         }
 
+        debug(requestId, "provider.ok", "tokens=" + response.totalTokens());
         rateLimiter.recordTokens(response.totalTokens());
 
         final var parsed = intentParser.parse(response.rawContent(), requestId);
 
         if (parsed instanceof PlainResponse plain) {
+            debug(requestId, "response.plain", plain.content());
             final String content = plain.content();
             auditLogger.log(AuditEvent.responseSent(requestId, identity, content, provider.name()));
             discordNotifier.notifyResponseSent(requestId, identity, content);
@@ -207,6 +241,7 @@ public final class ChatHandler {
         }
 
         if (parsed instanceof CommandIntentResponse commandIntent) {
+            debug(requestId, "response.command", commandIntent.intent().commandId());
             final ExecutionResult result =
                 commandExecutor.execute(commandIntent.intent(), identity, requestId);
             respond(identity.username(), result.message(), sourceType);
@@ -214,6 +249,7 @@ public final class ChatHandler {
         }
 
         if (parsed instanceof PlanResponse planResponse) {
+            debug(requestId, "response.plan", "steps=" + planResponse.plan().steps().size());
             if (!config.operationsEnabled) {
                 respond(identity.username(), "Operations are not enabled.", sourceType);
                 return;
@@ -238,12 +274,14 @@ public final class ChatHandler {
         }
 
         if (parsed instanceof RefusalResponse refusal) {
+            debug(requestId, "response.refusal", refusal.reason());
             auditLogger.log(AuditEvent.requestDenied(requestId, identity.username(), refusal.reason()));
             chunkResponse(identity.username(), refusal.reason(), sourceType);
             return;
         }
 
         if (parsed instanceof ClarificationResponse clarification) {
+            debug(requestId, "response.clarify", clarification.message());
             chunkResponse(identity.username(), clarification.message(), sourceType);
         }
     }
@@ -328,11 +366,14 @@ public final class ChatHandler {
             final String safe = message.replaceAll("[\r\n]", " ").strip();
             final var client = Proxy.getInstance().getClient();
             if (client == null) {
+                debug("send.drop", "no active client for whisper");
                 logger.debug("[OpenCraft] No active client; dropping whisper to {}.", username);
                 return;
             }
+            debug("send.whisper", username + " <- " + safe);
             client.sendAsync(ChatUtil.getWhisperChatPacket(username, safe));
         } catch (final Exception e) {
+            debug("send.error", "whisper " + e.getMessage());
             logger.warn("[OpenCraft] Failed to send whisper to {}: {}", username, e.getMessage());
         }
     }
@@ -341,12 +382,15 @@ public final class ChatHandler {
         try {
             final var client = Proxy.getInstance().getClient();
             if (client == null) {
+                debug("send.drop", "no active client for public chat");
                 logger.debug("[OpenCraft] No active client; dropping public chat response.");
                 return;
             }
             final String safe = ChatUtil.sanitizeChatMessage(message.replaceAll("[\r\n]", " ").strip());
+            debug("send.public", safe);
             client.sendAsync(new ServerboundChatPacket(safe));
         } catch (final Exception e) {
+            debug("send.error", "public " + e.getMessage());
             logger.warn("[OpenCraft] Failed to send public chat response: {}", e.getMessage());
         }
     }

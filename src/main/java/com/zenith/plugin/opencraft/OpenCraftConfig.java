@@ -34,6 +34,7 @@ public class OpenCraftConfig {
     public boolean discordAuditEnabled = false;
         public boolean discordLogDenied = true;
         public boolean discordLogAdminCommands = true;
+        public boolean discordDebugEnabled = false;
     public boolean auditLogEnabled = true;
     public String auditLogPath = "logs/opencraft-audit.log";
     public int auditRetentionDays = 30;

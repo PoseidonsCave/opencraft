@@ -9,6 +9,7 @@ import com.zenith.command.api.CommandCategory;
 import com.zenith.command.api.CommandContext;
 import com.zenith.command.api.CommandSources;
 import com.zenith.command.api.CommandUsage;
+import com.zenith.plugin.opencraft.debug.ChatDebugRecorder;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
 import com.zenith.plugin.opencraft.OpenCraftModule;
 import com.zenith.plugin.opencraft.auth.UserRole;
@@ -34,18 +35,21 @@ public class OpenCraftCommand extends Command {
     private final AuditLogger         auditLogger;
     private final ComponentLogger     logger;
     private final UserKeyResolver     userKeyResolver;
+    private final ChatDebugRecorder   chatDebugRecorder;
 
     public OpenCraftCommand(final OpenCraftConfig config,
                             final OpenCraftModule module,
                             final PluginUpdateService updateService,
                             final AuditLogger auditLogger,
-                            final ComponentLogger logger) {
+                            final ComponentLogger logger,
+                            final ChatDebugRecorder chatDebugRecorder) {
         this.config        = config;
         this.module        = module;
         this.updateService = updateService;
         this.auditLogger   = auditLogger;
         this.logger        = logger;
         this.userKeyResolver = new UserKeyResolver(this::lookupProfileByUsername);
+        this.chatDebugRecorder = chatDebugRecorder;
     }
 
     @Override
@@ -69,6 +73,8 @@ public class OpenCraftCommand extends Command {
                 "update",
                 "update check",
                 "update stage",
+                "debug recent",
+                "debug clear",
                 "audit prune",
                 "config"
             )
@@ -290,6 +296,28 @@ public class OpenCraftCommand extends Command {
                     return OK;
                 }))
             )
+            .then(literal("debug")
+                .then(literal("recent").executes(c -> {
+                    final List<ChatDebugRecorder.DebugEvent> recent = chatDebugRecorder.recent(20);
+                    final String description = recent.isEmpty()
+                        ? "No recent chat debug events."
+                        : recent.stream()
+                            .map(event -> event.timestamp() + " | " + event.stage() + " | " + event.detail())
+                            .reduce((left, right) -> left + "\n" + right)
+                            .orElse("No recent chat debug events.");
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Debug")
+                        .description(description);
+                    return OK;
+                }))
+                .then(literal("clear").executes(c -> {
+                    chatDebugRecorder.clear();
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Debug")
+                        .description("Cleared recent chat debug events.");
+                    return OK;
+                }))
+            )
             .then(literal("config").executes(c -> {
                 c.getSource().getEmbed()
                     .title("OpenCraft Config")
@@ -304,6 +332,7 @@ public class OpenCraftCommand extends Command {
                     .addField("userHourlyLimit",     String.valueOf(config.userHourlyLimit),            true)
                     .addField("allowedCommands",     config.allowedCommands.size() + " entries",        true)
                     .addField("discordAuditEnabled", String.valueOf(config.discordAuditEnabled),        true)
+                    .addField("discordDebugEnabled", String.valueOf(config.discordDebugEnabled),        true)
                     .addField("users",               config.users.size() + " entries",                  true);
                 return OK;
             }));
