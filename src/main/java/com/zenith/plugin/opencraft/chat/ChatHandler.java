@@ -3,6 +3,7 @@ package com.zenith.plugin.opencraft.chat;
 import com.zenith.Proxy;
 import com.zenith.util.ChatUtil;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
+import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.audit.AuditEvent;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
 import com.zenith.plugin.opencraft.auth.AuthorizationService;
@@ -73,6 +74,7 @@ public final class ChatHandler {
                        final PromptBuilder promptBuilder,
                        final CommandExecutor commandExecutor,
                        final OperationExecutor operationExecutor,
+                       final PatrolService patrolService,
                        final AuditLogger auditLogger,
                        final DiscordNotifier discordNotifier,
                        final ComponentLogger logger,
@@ -88,7 +90,7 @@ public final class ChatHandler {
         this.discordNotifier    = discordNotifier;
         this.logger             = logger;
         this.intentParser       = new IntentParser(logger);
-        this.worldStateObserver = new WorldStateObserver(logger);
+        this.worldStateObserver = new WorldStateObserver(logger, patrolService);
         this.whisperPatternMatcher = new WhisperPatternMatcher();
         this.chatDebugRecorder  = chatDebugRecorder;
         this.llmExecutor        = Executors.newCachedThreadPool(

@@ -80,6 +80,30 @@ public final class DiscordNotifier {
         send(DiscordAuditPayload.debug(requestId, stage, detail, config.providerName));
     }
 
+    public void notifyMilestone(final String requestId,
+                                final String sourceType,
+                                final String detail) {
+        if (!config.discordAuditEnabled || !config.discordLogAdminCommands) return;
+        send(DiscordAuditPayload.milestone(requestId, null, null, null,
+            sourceType, detail, config.providerName));
+    }
+
+    public void notifyMilestone(final String requestId,
+                                final UserIdentity identity,
+                                final String sourceType,
+                                final String detail) {
+        if (!config.discordAuditEnabled || !config.discordLogAdminCommands) return;
+        send(DiscordAuditPayload.milestone(
+            requestId,
+            identity.username(),
+            identity.uuid() != null ? identity.uuid().toString() : null,
+            identity.role().name(),
+            sourceType,
+            detail,
+            config.providerName
+        ));
+    }
+
     private void send(final DiscordAuditPayload payload) {
         executor.execute(() -> {
             if (!isZenithDiscordAvailable()) {
@@ -139,6 +163,7 @@ public final class DiscordNotifier {
             case "COMMAND_PENDING"                                    -> 0xFFAA00;
             case "PROVIDER_ERROR"                                     -> 0xFF6600;
             case "DEBUG_TRACE"                                        -> 0x3399FF;
+            case "AUTOMATION_MILESTONE"                               -> 0x8A63FF;
             default                                                   -> 0x5865F2;
         };
     }

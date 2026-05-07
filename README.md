@@ -94,6 +94,13 @@ The fields you'll touch most often:
 | `whisperChunkSize` | `190` | Max chars per whisper chunk (clamped to [10, 200]) |
 | `whisperInboundPattern` | `^(\S+) whispers to you: (.+)$` | Regex for inbound whisper detection |
 
+### Operations
+
+| Key | Default | Description |
+|---|---|---|
+| `operationsEnabled` | `false` | Allow the model to propose and run multi-step plans |
+| `baselineOperationsEnabled` | `true` | Expose built-in admin actions like `status`, `pathfinder` movement, current-position patrol scheduling, recurring `tasks`, and `antiAFK` controls |
+
 ### Provider
 
 | Key | Default | Description |
@@ -298,7 +305,7 @@ Pending confirmations expire after `confirmationTimeoutSeconds`.
 
 If the operator enables `operationsEnabled`, the assistant can propose multi-step admin plans instead of only single commands. In that mode, admins may see a plan summary first and then reply with `!oc confirm` or `!oc cancel`.
 
-Operations are disabled by default, so most installs will not use this flow unless the operator turns it on intentionally.
+Multi-step operations are disabled by default, but the built-in baseline admin actions stay available unless the operator turns `baselineOperationsEnabled` off.
 
 ### What the LLM will refuse
 

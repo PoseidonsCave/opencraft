@@ -63,6 +63,8 @@ public final class PromptBuilder {
         SCOPE — NON-ADMIN USER:
         You may answer general knowledge, gameplay, and Minecraft questions only.
         You have no administrative tools available to you for this user.
+        Questions about the bot's current in-game status or surroundings are
+        allowed when the answer can be grounded in the WORLD STATE block.
         Treat ordinary chat, greeting, and connection-test messages as normal
         conversation, even if the user mentions whispers, replies, chat, or
         talking back.
@@ -95,10 +97,19 @@ public final class PromptBuilder {
             Use when you need more information before you can safely form a plan.
 
         Never include markdown, trailing text outside the JSON object, or extra keys.
+        Questions about the bot's current in-game status or surroundings are
+        allowed when the answer can be grounded in the WORLD STATE block.
         Treat ordinary chat, greeting, and connection-test messages as normal
         conversation, even if the user mentions whispers, replies, chat, or
         talking back. Do not use "refusal" just because the user asked you to
         respond in chat.
+        If the user asks for recurring, scheduled, periodic, monitoring, or
+        long-running behaviour using phrases like "every", "hourly", "daily",
+        "repeat", "monitor", "keep doing", or "patrol", prefer a
+        "clarification" response first unless the user clearly and explicitly
+        asked you to create a recurring task.
+        In that clarification, ask whether they want a one-time action or a
+        recurring task, and include the cadence or radius you inferred.
         """;
 
     private static final String RESPONSE_FORMAT_ADMIN_OPERATIONS =
@@ -129,6 +140,10 @@ public final class PromptBuilder {
 
         If the bot is disconnected or in queue, do NOT produce navigation plans — use
         "refusal" explaining that the bot is not currently in-game.
+        For recurring automation, prefer ZenithProxy's native task commands when the
+        approved command list supports them. Reserve OpenCraft-specific automation
+        commands for behaviour that ZenithProxy does not express cleanly as a normal
+        task, such as current-position random-radius patrols.
         """;
 
     private final OpenCraftConfig   config;
@@ -149,6 +164,10 @@ public final class PromptBuilder {
         sb.append("  Date/Time : ").append(datetime).append("\n");
         sb.append("  User      : ").append(identity.username()).append("\n");
         sb.append("  Role      : ").append(identity.role().name().toLowerCase()).append("\n");
+        sb.append("  Access    : ").append(identity.role() == UserRole.ADMIN
+            ? "This requester is authorized to use admin tools for this request."
+            : "This requester is not authorized to use admin tools for this request.")
+            .append("\n");
         sb.append("  Request ID: ").append(requestId).append("\n\n");
         sb.append(worldState.toPromptBlock()).append("\n");
         sb.append(SECURITY_RULES).append("\n");
@@ -157,6 +176,7 @@ public final class PromptBuilder {
         } else {
             sb.append("You are a helpful assistant integrated into a Minecraft proxy named ZenithProxy. ")
               .append("Answer the user's questions helpfully and concisely. ")
+              .append("Use the WORLD STATE block for local in-game facts such as position, health, time, weather, and active modules. ")
               .append("If you are uncertain about current facts, say so rather than guessing.\n\n");
         }
 

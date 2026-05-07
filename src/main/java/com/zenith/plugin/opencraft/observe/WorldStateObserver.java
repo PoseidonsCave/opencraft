@@ -1,6 +1,7 @@
 package com.zenith.plugin.opencraft.observe;
 
 import com.zenith.Proxy;
+import com.zenith.plugin.opencraft.automation.PatrolService;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 
 import java.util.List;
@@ -10,9 +11,12 @@ import static com.zenith.Globals.*;
 public final class WorldStateObserver {
 
     private final ComponentLogger logger;
+    private final PatrolService patrolService;
 
-    public WorldStateObserver(final ComponentLogger logger) {
+    public WorldStateObserver(final ComponentLogger logger,
+                              final PatrolService patrolService) {
         this.logger = logger;
+        this.patrolService = patrolService;
     }
 
     public WorldState observe() {
@@ -35,6 +39,17 @@ public final class WorldStateObserver {
         String gameMode = "unknown";
         Float  health = null;
         int    occupiedSlots = 0;
+        long   dayTimeTicks = -1;
+        String timeOfDay = "";
+        String weather = "";
+        boolean antiAfkEnabled = false;
+        boolean antiAfkWalk = false;
+        boolean antiAfkJump = false;
+        boolean antiAfkSafeWalk = false;
+        boolean antiAfkRotate = false;
+        boolean antiAfkSwing = false;
+        boolean antiAfkSneak = false;
+        final List<String> patrolSummaries = patrolService.snapshotSummaries();
 
         if (connected && !inQueue) {
             x     = BOT.getX();
@@ -51,7 +66,24 @@ public final class WorldStateObserver {
 
             final var contents = pc.getInventoryCache().getPlayerInventory().getContents();
             occupiedSlots = (int) contents.stream().filter(s -> s != null).count();
+
+            final var chunkCache = CACHE.getChunkCache();
+            final var worldTimeData = chunkCache.getWorldTimeData();
+            if (worldTimeData != null) {
+                dayTimeTicks = worldTimeData.toPacket().getDayTime();
+                timeOfDay = formatTimeOfDay(dayTimeTicks);
+            }
+            weather = describeWeather(chunkCache.isRaining(),
+                chunkCache.getRainStrength(), chunkCache.getThunderStrength());
         }
+
+        antiAfkEnabled = CONFIG.client.extra.antiafk.enabled;
+        antiAfkWalk = CONFIG.client.extra.antiafk.actions.walk;
+        antiAfkJump = CONFIG.client.extra.antiafk.actions.jump;
+        antiAfkSafeWalk = CONFIG.client.extra.antiafk.actions.safeWalk;
+        antiAfkRotate = CONFIG.client.extra.antiafk.actions.rotate;
+        antiAfkSwing = CONFIG.client.extra.antiafk.actions.swingHand;
+        antiAfkSneak = CONFIG.client.extra.antiafk.actions.sneak;
 
         final boolean pathfinderActive   = BARITONE.isActive();
         final var     currentGoal        = BARITONE.currentGoal();
@@ -67,7 +99,10 @@ public final class WorldStateObserver {
         return new WorldState(
             connected, inQueue, queuePosition,
             x, y, z, yaw, pitch,
-            gameMode, health,
+            gameMode, health, dayTimeTicks, timeOfDay, weather,
+            antiAfkEnabled, antiAfkWalk, antiAfkJump, antiAfkSafeWalk,
+            antiAfkRotate, antiAfkSwing, antiAfkSneak,
+            patrolSummaries,
             pathfinderActive, pathfinderGoalDesc,
             nearbyPlayerCount, occupiedSlots,
             enabledModules
@@ -78,10 +113,28 @@ public final class WorldStateObserver {
         return new WorldState(
             false, false, 0,
             0, 0, 0, 0, 0,
-            "unknown", null,
+            "unknown", null, -1, "", "",
+            false, false, false, false, false, false, false,
+            List.of(),
             false, "",
             0, 0,
             List.of()
         );
+    }
+
+    private static String formatTimeOfDay(final long dayTime) {
+        final long ticks = Math.floorMod(dayTime, 24000);
+        final int hours = (int) ((ticks / 1000 + 6) % 24);
+        final int minutes = (int) ((ticks % 1000) * 60 / 1000);
+        final String prefix = dayTime < 0 ? "fixed " : "";
+        return String.format("%s%02d:%02d", prefix, hours, minutes);
+    }
+
+    private static String describeWeather(final boolean raining,
+                                          final float rainStrength,
+                                          final float thunderStrength) {
+        if (thunderStrength > 0.1f) return "thunder";
+        if (raining || rainStrength > 0.1f) return "rain";
+        return "clear";
     }
 }

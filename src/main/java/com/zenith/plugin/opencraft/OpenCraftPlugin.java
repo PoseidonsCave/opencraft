@@ -4,6 +4,7 @@ import com.zenith.plugin.api.Plugin;
 import com.zenith.plugin.api.PluginAPI;
 import com.zenith.plugin.api.ZenithProxyPlugin;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
+import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.auth.AuthorizationService;
 import com.zenith.plugin.opencraft.chat.ChatHandler;
 import com.zenith.plugin.opencraft.command.OpenCraftCommand;
@@ -40,6 +41,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
     private static AuthorizationService      authService;
     private static CommandAllowlist          commandAllowlist;
     private static CommandExecutor           commandExecutor;
+    private static PatrolService             patrolService;
     private static OperationExecutor         operationExecutor;
     private static PromptBuilder             promptBuilder;
     private static ChatHandler               chatHandler;
@@ -58,14 +60,16 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
         rateLimiter       = new RateLimiter(config);
         authService       = new AuthorizationService(config, logger);
         commandAllowlist  = new CommandAllowlist(config);
-        commandExecutor   = new CommandExecutor(config, commandAllowlist, auditLogger, discordNotifier, logger);
+        patrolService     = new PatrolService(logger, discordNotifier);
+        commandExecutor   = new CommandExecutor(config, commandAllowlist, patrolService, auditLogger, discordNotifier, logger);
         operationExecutor = new OperationExecutor(config, commandExecutor, auditLogger, logger);
         promptBuilder     = new PromptBuilder(config, commandAllowlist);
         chatDebugRecorder = new ChatDebugRecorder();
 
         chatHandler = new ChatHandler(
             config, authService, rateLimiter, provider,
-            promptBuilder, commandExecutor, operationExecutor, auditLogger, discordNotifier, logger, chatDebugRecorder
+            promptBuilder, commandExecutor, operationExecutor, patrolService,
+            auditLogger, discordNotifier, logger, chatDebugRecorder
         );
 
         module        = new OpenCraftModule(config, chatHandler, logger);
