@@ -80,6 +80,7 @@ class CommandAllowlistTest {
 
         final CommandAllowlist list = new CommandAllowlist(cfg);
         assertTrue(list.find("pathfinder.thisway").isPresent());
+        assertTrue(list.find("pathfinder.cardinal").isPresent());
         assertTrue(list.find("pathfinder.near").isPresent());
         assertTrue(list.find("patrol.once.current").isPresent());
         assertTrue(list.find("patrol.schedule.current").isPresent());

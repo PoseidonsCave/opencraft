@@ -3,6 +3,7 @@ package com.zenith.plugin.opencraft.intent;
 import com.zenith.command.api.CommandContext;
 import com.zenith.command.api.CommandSources;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
+import com.zenith.plugin.opencraft.automation.CardinalMovementService;
 import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.audit.AuditEvent;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
@@ -28,6 +29,7 @@ public final class CommandExecutor {
 
     private final CommandAllowlist commandAllowlist;
     private final OpenCraftConfig  config;
+    private final CardinalMovementService cardinalMovementService;
     private final PatrolService    patrolService;
     private final AuditLogger      auditLogger;
     private final DiscordNotifier  discordNotifier;
@@ -38,12 +40,14 @@ public final class CommandExecutor {
 
     public CommandExecutor(final OpenCraftConfig config,
                            final CommandAllowlist commandAllowlist,
+                           final CardinalMovementService cardinalMovementService,
                            final PatrolService patrolService,
                            final AuditLogger auditLogger,
                            final DiscordNotifier discordNotifier,
                            final ComponentLogger logger) {
         this.config           = config;
         this.commandAllowlist = commandAllowlist;
+        this.cardinalMovementService = cardinalMovementService;
         this.patrolService    = patrolService;
         this.auditLogger      = auditLogger;
         this.discordNotifier  = discordNotifier;
@@ -53,48 +57,56 @@ public final class CommandExecutor {
         public ExecutionResult execute(final CommandIntent intent,
                                    final UserIdentity identity,
                                    final String requestId) {
+        return execute(intent, identity, requestId, null);
+    }
+
+        public ExecutionResult execute(final CommandIntent intent,
+                                   final UserIdentity identity,
+                                   final String requestId,
+                                   final String originalRequest) {
         if (identity.role() != UserRole.ADMIN) {
             logger.warn("[OpenCraft] req={} Non-admin {} attempted command execution.",
                 requestId, identity.auditLabel());
             auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Insufficient role", intent.commandId()));
             return ExecutionResult.denied("Administrative commands require admin role.");
         }
-        final Optional<CommandDefinition> defOpt = commandAllowlist.find(intent.commandId());
+        final CommandIntent effectiveIntent = normalizeIntent(intent, originalRequest);
+        final Optional<CommandDefinition> defOpt = commandAllowlist.find(effectiveIntent.commandId());
         if (defOpt.isEmpty()) {
             logger.warn("[OpenCraft] req={} Command '{}' not in allowlist.",
-                requestId, intent.commandId());
-            auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Not in allowlist", intent.commandId()));
+                requestId, effectiveIntent.commandId());
+            auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Not in allowlist", effectiveIntent.commandId()));
             return ExecutionResult.denied("That command is not available.");
         }
 
         final CommandDefinition def = defOpt.get();
         if (!identity.role().satisfies(def.roleRequired())) {
-            auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Role requirement", intent.commandId()));
+            auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Role requirement", effectiveIntent.commandId()));
             return ExecutionResult.denied("Insufficient role for this command.");
         }
-        final String argError = validateArguments(intent.arguments(), def);
+        final String argError = validateArguments(effectiveIntent.arguments(), def);
         if (argError != null) {
             logger.warn("[OpenCraft] req={} Argument validation failed for '{}': {}",
-                requestId, intent.commandId(), argError);
-            auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Arg validation: " + argError, intent.commandId()));
+                requestId, effectiveIntent.commandId(), argError);
+            auditLogger.log(AuditEvent.commandDenied(requestId, identity, "Arg validation: " + argError, effectiveIntent.commandId()));
             return ExecutionResult.denied("Command arguments are invalid.");
         }
         if (def.isHighRisk() && identity.uuid() != null) {
             final Instant expiresAt = Instant.now().plus(
                 Duration.ofSeconds(Math.max(5, config.confirmationTimeoutSeconds))
             );
-            final PendingConfirmation pending = new PendingConfirmation(intent, def, expiresAt);
+            final PendingConfirmation pending = new PendingConfirmation(effectiveIntent, def, expiresAt);
             pendingConfirmations.put(identity.uuid(), pending);
 
-            auditLogger.log(AuditEvent.commandPendingConfirmation(requestId, identity, intent.commandId()));
-            discordNotifier.notifyCommandPending(requestId, identity, intent);
+            auditLogger.log(AuditEvent.commandPendingConfirmation(requestId, identity, effectiveIntent.commandId()));
+            discordNotifier.notifyCommandPending(requestId, identity, effectiveIntent);
 
             return ExecutionResult.needsConfirmation(pending,
                 "[OC] High-risk command: " + def.description() + ". " +
                 "Reply '" + config.prefix + " confirm' within " + Math.max(5, config.confirmationTimeoutSeconds) +
                 " seconds to proceed, or '" + config.prefix + " cancel'.");
         }
-        return doExecute(intent, def, identity, requestId);
+        return doExecute(effectiveIntent, def, identity, requestId);
     }
 
         public ExecutionResult confirm(final UserIdentity identity, final String requestId) {
@@ -141,7 +153,7 @@ public final class CommandExecutor {
                 rawResult = executeInternal(def.commandId(), intent.arguments(), identity, requestId);
             } else {
                 COMMAND.execute(CommandContext.create(command, CommandSources.TERMINAL));
-                rawResult = "[command dispatched: " + def.commandId() + "]";
+                rawResult = successMessage(def.commandId(), intent.arguments());
             }
 
             final String redacted  = redact(rawResult, def.redactFields());
@@ -159,11 +171,28 @@ public final class CommandExecutor {
         }
     }
 
+    private CommandIntent normalizeIntent(final CommandIntent intent,
+                                          final String originalRequest) {
+        final CommandIntent normalized = CommandIntentNormalizer.normalize(intent, originalRequest);
+        if (normalized != null && !normalized.commandId().equals(intent.commandId())) {
+            logger.info("[OpenCraft] Normalized command intent '{}' -> '{}'",
+                intent.commandId(), normalized.commandId());
+        }
+        return normalized == null ? intent : normalized;
+    }
+
     private String executeInternal(final String commandId,
                                    final Map<String, String> args,
                                    final UserIdentity identity,
                                    final String requestId) {
         return switch (commandId) {
+            case "pathfinder.cardinal" ->
+                cardinalMovementService.moveFromCurrent(
+                    requestId,
+                    identity,
+                    args.get("direction").strip(),
+                    Integer.parseInt(args.get("blocks").strip())
+                );
             case "patrol.once.current" ->
                 patrolService.patrolOnceCurrent(requestId, identity,
                     Integer.parseInt(args.get("radius").strip()));
@@ -182,6 +211,37 @@ public final class CommandExecutor {
                 patrolService.list();
             default ->
                 throw new IllegalArgumentException("Unknown internal command: " + commandId);
+        };
+    }
+
+    private static String successMessage(final String commandId,
+                                         final Map<String, String> args) {
+        return switch (commandId) {
+            case "pathfinder.thisway" ->
+                "Moving " + args.get("blocks") + " block(s) in the current facing direction.";
+            case "pathfinder.goto.xz" ->
+                "Navigating to x=" + args.get("x") + ", z=" + args.get("z") + ".";
+            case "pathfinder.goto.xyz" ->
+                "Navigating to x=" + args.get("x") + ", y=" + args.get("y") + ", z=" + args.get("z") + ".";
+            case "pathfinder.near" ->
+                "Navigating near x=" + args.get("x") + ", y=" + args.get("y")
+                    + ", z=" + args.get("z") + ".";
+            case "pathfinder.follow" ->
+                "Following " + args.get("player") + ".";
+            case "pathfinder.pickup" ->
+                "Picking up nearby items.";
+            case "pathfinder.stop" ->
+                "Stopped pathfinder navigation.";
+            case "tasks.interval.pathfinder.thisway",
+                 "tasks.interval.pathfinder.near",
+                 "tasks.interval.pathfinder.follow" ->
+                "Scheduled recurring task '" + args.get("taskId") + "'.";
+            case "tasks.delete" ->
+                "Deleted task '" + args.get("taskId") + "'.";
+            case "tasks.clear" ->
+                "Cleared all scheduled tasks.";
+            default ->
+                "[command dispatched: " + commandId + "]";
         };
     }
 

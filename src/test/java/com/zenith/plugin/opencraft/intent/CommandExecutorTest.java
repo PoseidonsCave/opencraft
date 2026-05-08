@@ -1,6 +1,7 @@
 package com.zenith.plugin.opencraft.intent;
 
 import com.zenith.plugin.opencraft.OpenCraftConfig;
+import com.zenith.plugin.opencraft.automation.CardinalMovementService;
 import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.auth.UserIdentity;
 import com.zenith.plugin.opencraft.auth.UserRole;
@@ -26,6 +27,7 @@ class CommandExecutorTest {
     private CommandExecutor   executor;
     private AuditLogger       auditLogger;
     private DiscordNotifier   discordNotifier;
+    private CardinalMovementService cardinalMovementService;
     private PatrolService     patrolService;
 
     @BeforeEach
@@ -62,9 +64,11 @@ class CommandExecutorTest {
         allowlist       = new CommandAllowlist(config);
         auditLogger     = mock(AuditLogger.class);
         discordNotifier = mock(DiscordNotifier.class);
-        patrolService   = new PatrolService(mock(ComponentLogger.class), discordNotifier);
+        cardinalMovementService = mock(CardinalMovementService.class);
+        patrolService   = mock(PatrolService.class);
+        when(patrolService.list()).thenReturn("No patrols are scheduled.");
 
-        executor = new CommandExecutor(config, allowlist, patrolService, auditLogger, discordNotifier,
+        executor = new CommandExecutor(config, allowlist, cardinalMovementService, patrolService, auditLogger, discordNotifier,
             mock(ComponentLogger.class));
     }
 
@@ -161,7 +165,7 @@ class CommandExecutorTest {
         internal.roleRequired = "admin";
         config.allowedCommands = List.of(internal);
         allowlist = new CommandAllowlist(config);
-        executor = new CommandExecutor(config, allowlist, patrolService, auditLogger, discordNotifier,
+        executor = new CommandExecutor(config, allowlist, cardinalMovementService, patrolService, auditLogger, discordNotifier,
             mock(ComponentLogger.class));
 
         final ExecutionResult result = executor.execute(
@@ -172,5 +176,36 @@ class CommandExecutorTest {
 
         assertEquals(ExecutionResult.Status.SUCCESS, result.status());
         assertTrue(result.message().contains("No patrols are scheduled."));
+    }
+
+    @Test
+    void walkAlias_normalizesToDirectionalMovement() {
+        when(cardinalMovementService.moveFromCurrent("req-10", admin(), "south", 5))
+            .thenReturn("Moving 5 block(s) south from the current position.");
+
+        final ExecutionResult result = executor.execute(
+            new CommandIntent("walk", Map.of(), "walk south"),
+            admin(),
+            "req-10",
+            "Hello! Can you walk 5 blocks south from your current position?"
+        );
+
+        assertEquals(ExecutionResult.Status.SUCCESS, result.status());
+        assertTrue(result.message().contains("Moving 5 block(s) south"));
+        verify(cardinalMovementService).moveFromCurrent("req-10", admin(), "south", 5);
+    }
+
+    @Test
+    void scheduledTask_hasUsefulSuccessMessage() {
+        final CommandIntent intent = new CommandIntent(
+            "tasks.interval.pathfinder.thisway",
+            Map.of("taskId", "patrol-1", "startDelay", "30s", "repeatDelay", "3h", "blocks", "5"),
+            "repeat movement"
+        );
+
+        final ExecutionResult result = executor.execute(intent, admin(), "req-11");
+
+        assertEquals(ExecutionResult.Status.SUCCESS, result.status());
+        assertTrue(result.message().contains("Scheduled recurring task 'patrol-1'."));
     }
 }

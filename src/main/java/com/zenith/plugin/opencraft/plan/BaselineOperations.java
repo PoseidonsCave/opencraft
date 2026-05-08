@@ -49,6 +49,13 @@ public final class BaselineOperations {
                 Map.of("blocks", "integer")
             ),
             define(
+                "pathfinder.cardinal",
+                "Move N blocks north, south, east, west, or along -x/-z style world directions from the current position",
+                "@internal:pathfinder.cardinal {direction} {blocks}",
+                "admin", "medium", false,
+                Map.of("direction", "string", "blocks", "integer")
+            ),
+            define(
                 "pathfinder.near",
                 "Navigate to anywhere within a radius of the target X,Y,Z position",
                 "pathfinder near {x} {y} {z} {rangeSq}",

@@ -4,6 +4,7 @@ import com.zenith.plugin.api.Plugin;
 import com.zenith.plugin.api.PluginAPI;
 import com.zenith.plugin.api.ZenithProxyPlugin;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
+import com.zenith.plugin.opencraft.automation.CardinalMovementService;
 import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.auth.AuthorizationService;
 import com.zenith.plugin.opencraft.chat.ChatHandler;
@@ -41,6 +42,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
     private static AuthorizationService      authService;
     private static CommandAllowlist          commandAllowlist;
     private static CommandExecutor           commandExecutor;
+    private static CardinalMovementService   cardinalMovementService;
     private static PatrolService             patrolService;
     private static OperationExecutor         operationExecutor;
     private static PromptBuilder             promptBuilder;
@@ -60,8 +62,17 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
         rateLimiter       = new RateLimiter(config);
         authService       = new AuthorizationService(config, logger);
         commandAllowlist  = new CommandAllowlist(config);
+        cardinalMovementService = new CardinalMovementService(logger, discordNotifier);
         patrolService     = new PatrolService(logger, discordNotifier);
-        commandExecutor   = new CommandExecutor(config, commandAllowlist, patrolService, auditLogger, discordNotifier, logger);
+        commandExecutor   = new CommandExecutor(
+            config,
+            commandAllowlist,
+            cardinalMovementService,
+            patrolService,
+            auditLogger,
+            discordNotifier,
+            logger
+        );
         operationExecutor = new OperationExecutor(config, commandExecutor, auditLogger, logger);
         promptBuilder     = new PromptBuilder(config, commandAllowlist);
         chatDebugRecorder = new ChatDebugRecorder();
