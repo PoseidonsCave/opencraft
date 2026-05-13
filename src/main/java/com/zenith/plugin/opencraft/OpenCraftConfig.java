@@ -38,10 +38,11 @@ public class OpenCraftConfig {
     public boolean auditLogEnabled = true;
     public String auditLogPath = "logs/opencraft-audit.log";
     public int auditRetentionDays = 30;
-    public boolean logDeniedAttempts = true;
+        public boolean logDeniedAttempts = true;
         public String systemPromptOverride = "";
         public int confirmationTimeoutSeconds = 60;
         public String timezone = "UTC";
+        public String profile = "manager";
     public boolean updateCheckOnLoad = true;
     public boolean updateAutoDownload = false;
         public String updateChannel = "stable";
@@ -51,6 +52,31 @@ public class OpenCraftConfig {
         public int operationCostWarnThreshold = 2000;
         public int maxOperationSteps = 10;
         public int operationStepTimeoutMinutes = 10;
+        public final AgentConfig agent = new AgentConfig();
+
+        public static class AgentConfig {
+                public boolean enabled = false;
+                public String nodeId = "";
+                public String cluster = "default";
+                public String bindHost = "0.0.0.0";
+                public int port = 38265;
+                public String sharedSecretEnvVar = "OPENCRAFT_AGENT_SECRET";
+        public int challengeTtlSeconds = 120;
+        public int allowedClockSkewSeconds = 30;
+        public boolean shareBillingAcrossPeers = true;
+        public int maxRetainedRuns = 100;
+        public List<AgentPeerConfig> peers = new ArrayList<>();
+        }
+
+        public static class AgentPeerConfig {
+                public String peerId = "";
+                public String displayName = "";
+                public String host = "";
+                public int port = 38265;
+                public String role = "worker";
+                public boolean enabled = true;
+                public boolean allowTaskExecution = true;
+        }
 
         public static class AllowedCommandConfig {
                 public String commandId = "";

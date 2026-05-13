@@ -4,6 +4,8 @@ import com.zenith.plugin.api.Plugin;
 import com.zenith.plugin.api.PluginAPI;
 import com.zenith.plugin.api.ZenithProxyPlugin;
 import com.zenith.plugin.opencraft.audit.AuditLogger;
+import com.zenith.plugin.opencraft.agent.AgentNetworkService;
+import com.zenith.plugin.opencraft.agent.NodeProfile;
 import com.zenith.plugin.opencraft.automation.CardinalMovementService;
 import com.zenith.plugin.opencraft.automation.PatrolService;
 import com.zenith.plugin.opencraft.auth.AuthorizationService;
@@ -45,6 +47,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
     private static CardinalMovementService   cardinalMovementService;
     private static PatrolService             patrolService;
     private static OperationExecutor         operationExecutor;
+    private static AgentNetworkService       agentNetworkService;
     private static PromptBuilder             promptBuilder;
     private static ChatHandler               chatHandler;
     private static ChatDebugRecorder         chatDebugRecorder;
@@ -62,6 +65,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
         rateLimiter       = new RateLimiter(config);
         authService       = new AuthorizationService(config, logger);
         commandAllowlist  = new CommandAllowlist(config);
+        agentNetworkService = new AgentNetworkService(config);
         cardinalMovementService = new CardinalMovementService(logger, discordNotifier);
         patrolService     = new PatrolService(logger, discordNotifier);
         commandExecutor   = new CommandExecutor(
@@ -88,7 +92,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
 
         pluginAPI.registerModule(module);
         pluginAPI.registerCommand(new OpenCraftCommand(
-            config, module, updateService, auditLogger, logger, chatDebugRecorder, chatHandler
+            config, module, updateService, auditLogger, logger, chatDebugRecorder, chatHandler, agentNetworkService
         ));
 
         updateService.scheduleStartupCheck();
@@ -111,6 +115,7 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
         } else {
             cfg.apiKeyEnvVar = cfg.apiKeyEnvVar.strip();
         }
+        cfg.profile = NodeProfile.fromString(cfg.profile).configValue();
         if (cfg.whisperChunkSize < 10 || cfg.whisperChunkSize > 200) {
             final int clamped = Math.max(10, Math.min(200, cfg.whisperChunkSize));
             logger.warn("[OpenCraft] Config: 'whisperChunkSize'={} out of range [10,200]; clamping to {}.",
@@ -126,10 +131,41 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
             logger.warn("[OpenCraft] Config: 'timeoutSeconds'={} < 1; clamping to 30.", cfg.timeoutSeconds);
             cfg.timeoutSeconds = 30;
         }
+        if (cfg.agent.port < 1 || cfg.agent.port > 65535) {
+            logger.warn("[OpenCraft] Config: 'agent.port'={} out of range [1,65535]; clamping to 38265.",
+                cfg.agent.port);
+            cfg.agent.port = 38265;
+        }
+        if (cfg.agent.challengeTtlSeconds < 15) {
+            logger.warn("[OpenCraft] Config: 'agent.challengeTtlSeconds'={} < 15; clamping to 15.",
+                cfg.agent.challengeTtlSeconds);
+            cfg.agent.challengeTtlSeconds = 15;
+        }
+        if (cfg.agent.allowedClockSkewSeconds < 0) {
+            logger.warn("[OpenCraft] Config: 'agent.allowedClockSkewSeconds'={} < 0; clamping to 0.",
+                cfg.agent.allowedClockSkewSeconds);
+            cfg.agent.allowedClockSkewSeconds = 0;
+        }
+        if (cfg.agent.maxRetainedRuns < 10) {
+            logger.warn("[OpenCraft] Config: 'agent.maxRetainedRuns'={} < 10; clamping to 10.",
+                cfg.agent.maxRetainedRuns);
+            cfg.agent.maxRetainedRuns = 10;
+        }
         final String apiKey = System.getenv(cfg.apiKeyEnvVar);
         if (apiKey == null || apiKey.isBlank()) {
             logger.warn("[OpenCraft] WARNING: Environment variable '{}' is not set or is blank. " +
                 "The plugin will fail on the first LLM request.", cfg.apiKeyEnvVar);
+        }
+        if (cfg.agent.enabled) {
+            final String agentSecret = System.getenv(
+                cfg.agent.sharedSecretEnvVar == null || cfg.agent.sharedSecretEnvVar.isBlank()
+                    ? "OPENCRAFT_AGENT_SECRET"
+                    : cfg.agent.sharedSecretEnvVar.strip()
+            );
+            if (agentSecret == null || agentSecret.isBlank()) {
+                logger.warn("[OpenCraft] WARNING: Agent mode is enabled but shared secret env var '{}' is blank.",
+                    cfg.agent.sharedSecretEnvVar);
+            }
         }
     }
 
@@ -139,4 +175,5 @@ public class OpenCraftPlugin implements ZenithProxyPlugin {
     public static PluginUpdateService  getUpdateService()   { return updateService; }
     public static AuditLogger          getAuditLogger()     { return auditLogger; }
     public static DiscordNotifier      getDiscordNotifier() { return discordNotifier; }
+    public static AgentNetworkService  getAgentNetworkService() { return agentNetworkService; }
 }

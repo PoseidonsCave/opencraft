@@ -2,6 +2,7 @@ package com.zenith.plugin.opencraft.command;
 
 import com.zenith.feature.api.ProfileData;
 import com.zenith.feature.whitelist.PlayerListsManager;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.zenith.command.api.Command;
@@ -10,6 +11,15 @@ import com.zenith.command.api.CommandContext;
 import com.zenith.command.api.CommandSources;
 import com.zenith.command.api.CommandUsage;
 import com.zenith.Proxy;
+import com.zenith.plugin.opencraft.agent.AgentChallenge;
+import com.zenith.plugin.opencraft.agent.AgentNetworkService;
+import com.zenith.plugin.opencraft.agent.AgentNetworkStatus;
+import com.zenith.plugin.opencraft.agent.FleetRunSnapshot;
+import com.zenith.plugin.opencraft.agent.FleetRunStatus;
+import com.zenith.plugin.opencraft.agent.FleetStepSnapshot;
+import com.zenith.plugin.opencraft.agent.FleetStepStatus;
+import com.zenith.plugin.opencraft.agent.FleetTaskEnvelope;
+import com.zenith.plugin.opencraft.agent.NodeProfile;
 import com.zenith.plugin.opencraft.debug.ChatDebugRecorder;
 import com.zenith.plugin.opencraft.OpenCraftConfig;
 import com.zenith.plugin.opencraft.OpenCraftModule;
@@ -26,6 +36,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.List;
+import java.util.function.ToIntFunction;
 
 import static com.zenith.Globals.saveConfig;
 
@@ -39,6 +50,7 @@ public class OpenCraftCommand extends Command {
     private final UserKeyResolver     userKeyResolver;
     private final ChatDebugRecorder   chatDebugRecorder;
     private final ChatHandler         chatHandler;
+    private final AgentNetworkService agentNetworkService;
 
     public OpenCraftCommand(final OpenCraftConfig config,
                             final OpenCraftModule module,
@@ -46,7 +58,8 @@ public class OpenCraftCommand extends Command {
                             final AuditLogger auditLogger,
                             final ComponentLogger logger,
                             final ChatDebugRecorder chatDebugRecorder,
-                            final ChatHandler chatHandler) {
+                            final ChatHandler chatHandler,
+                            final AgentNetworkService agentNetworkService) {
         this.config        = config;
         this.module        = module;
         this.updateService = updateService;
@@ -55,6 +68,7 @@ public class OpenCraftCommand extends Command {
         this.userKeyResolver = new UserKeyResolver(this::lookupProfileByUsername);
         this.chatDebugRecorder = chatDebugRecorder;
         this.chatHandler   = chatHandler;
+        this.agentNetworkService = agentNetworkService;
     }
 
     @Override
@@ -67,6 +81,8 @@ public class OpenCraftCommand extends Command {
                 "status",
                 "enable",
                 "disable",
+                "profile",
+                "profile manager|agent|hybrid",
                 "user list",
                 "user add UUID_OR_USERNAME MEMBER|ADMIN",
                 "user remove UUID_OR_USERNAME",
@@ -81,6 +97,18 @@ public class OpenCraftCommand extends Command {
                 "debug recent",
                 "debug clear",
                 "debug whisper USERNAME MESSAGE",
+                "agent status",
+                "agent challenge PEER_ID",
+                "agent run list",
+                "agent run show RUN_ID",
+                "agent run create SUMMARY -- PEER_IDS",
+                "agent run start RUN_ID",
+                "agent run finish RUN_ID [DETAIL]",
+                "agent run fail RUN_ID REASON",
+                "agent run cancel RUN_ID [DETAIL]",
+                "agent run step RUN_ID PEER_ID COMMAND_ID SUMMARY",
+                "agent run step-status RUN_ID STEP_ID STATUS DETAIL",
+                "agent billing TARGET_COUNT",
                 "audit prune",
                 "config"
             )
@@ -92,16 +120,21 @@ public class OpenCraftCommand extends Command {
         return command("llm")
             .requires(this::validateManagementAccess)
             .then(literal("status").executes(c -> {
+                final AgentNetworkStatus agentStatus = agentNetworkService.status();
                 c.getSource().getEmbed()
                     .title("OpenCraft Status")
                     .addField("Module enabled", String.valueOf(module.isEnabled()), true)
                     .addField("Provider",       config.providerName,                true)
                     .addField("Model",          config.model,                       true)
+                    .addField("Profile",        config.profile,                     true)
                     .addField("Prefix",         config.prefix,                      true)
                     .addField("Public chat",    String.valueOf(config.publicChatEnabled), true)
                     .addField("Whisper input",  String.valueOf(config.whisperEnabled),    true)
                     .addField("Update channel", config.updateChannel,               true)
-                    .addField("Update status",  String.valueOf(updateService.getStatus()), true);
+                    .addField("Update status",  String.valueOf(updateService.getStatus()), true)
+                    .addField("Agent mode",     String.valueOf(agentStatus.enabled()), true)
+                    .addField("Agent peers",    String.valueOf(agentStatus.configuredPeers()), true)
+                    .addField("Shared billing", String.valueOf(agentStatus.sharedBillingAcrossPeers()), true);
                 return OK;
             }))
             .then(literal("enable")
@@ -116,6 +149,30 @@ public class OpenCraftCommand extends Command {
                     c.getSource().getEmbed().title("OpenCraft").description("Module disabled.");
                     return OK;
                 }))
+            .then(literal("profile")
+                .executes(c -> {
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Profile")
+                        .description("Current node profile for orchestration behavior.")
+                        .addField("profile", config.profile, true)
+                        .addField("canCoordinateFleet", String.valueOf(agentNetworkService.canCoordinateFleet()), true)
+                        .addField("canAcceptFleetTasks", String.valueOf(agentNetworkService.canAcceptFleetTasks()), true);
+                    return OK;
+                })
+                .then(argument("mode", enumStrings("manager", "agent", "hybrid"))
+                    .executes(c -> {
+                        final NodeProfile profile = NodeProfile.fromString(StringArgumentType.getString(c, "mode"));
+                        config.profile = profile.configValue();
+                        saveConfig();
+                        c.getSource().getEmbed()
+                            .title("OpenCraft Profile")
+                            .description("Updated node profile.")
+                            .addField("profile", config.profile, true)
+                            .addField("canCoordinateFleet", String.valueOf(agentNetworkService.canCoordinateFleet()), true)
+                            .addField("canAcceptFleetTasks", String.valueOf(agentNetworkService.canAcceptFleetTasks()), true)
+                            .addField("Persistence", "Saved to plugins/config/opencraft.json", false);
+                        return OK;
+                    })))
             .then(literal("user")
                 .then(literal("list").executes(c -> {
                     final String description = renderUserList();
@@ -359,12 +416,231 @@ public class OpenCraftCommand extends Command {
                                 return OK;
                             }))))
             )
+            .then(literal("agent")
+                .then(literal("status").executes(c -> {
+                    final AgentNetworkStatus status = agentNetworkService.status();
+                    c.getSource().getEmbed()
+                        .title("OpenCraft Agent Status")
+                        .description(renderAgentPeers())
+                        .addField("enabled", String.valueOf(status.enabled()), true)
+                        .addField("configured", String.valueOf(status.configured()), true)
+                        .addField("profile", status.profile(), true)
+                        .addField("nodeId", blankAs(status.nodeId(), "(unset)"), true)
+                        .addField("cluster", status.cluster(), true)
+                        .addField("bind", status.bindHost() + ":" + status.port(), false)
+                        .addField("sharedSecretEnvVar", status.sharedSecretEnvVar(), false)
+                        .addField("secretPresent", String.valueOf(status.sharedSecretPresent()), true)
+                        .addField("fingerprint", blankAs(agentNetworkService.challengeFingerprint(), "(missing)"), true)
+                        .addField("peers", String.valueOf(status.configuredPeers()), true)
+                        .addField("actionablePeers", String.valueOf(status.actionablePeers()), true)
+                        .addField("sharedBilling", String.valueOf(status.sharedBillingAcrossPeers()), true)
+                        .addField("canCoordinateFleet", String.valueOf(agentNetworkService.canCoordinateFleet()), true)
+                        .addField("canAcceptFleetTasks", String.valueOf(agentNetworkService.canAcceptFleetTasks()), true);
+                    return OK;
+                }))
+                .then(literal("run")
+                    .then(literal("list").executes(c -> {
+                        c.getSource().getEmbed()
+                            .title("OpenCraft Fleet Runs")
+                            .description(renderFleetRunList())
+                            .addField("profile", config.profile, true)
+                            .addField("canCoordinate", String.valueOf(agentNetworkService.canCoordinateFleet()), true)
+                            .addField("canAccept", String.valueOf(agentNetworkService.canAcceptFleetTasks()), true);
+                        return OK;
+                    }))
+                    .then(literal("show")
+                        .then(argument("runId", StringArgumentType.word())
+                            .executes(c -> {
+                                final String runId = StringArgumentType.getString(c, "runId").strip();
+                                final Optional<FleetRunSnapshot> run = agentNetworkService.fleetRun(runId);
+                                if (run.isEmpty()) {
+                                    c.getSource().getEmbed()
+                                        .title("OpenCraft Fleet Run")
+                                        .description("No fleet run found for: " + runId)
+                                        .errorColor();
+                                    return ERROR;
+                                }
+                                final FleetRunSnapshot snapshot = run.get();
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft Fleet Run")
+                                    .description(renderFleetRun(snapshot))
+                                    .addField("runId", snapshot.runId(), false)
+                                    .addField("status", snapshot.status().configValue(), true)
+                                    .addField("profile", snapshot.profile(), true)
+                                    .addField("billableUnits", String.valueOf(snapshot.billableRequestUnits()), true)
+                                    .addField("sharedBilling", String.valueOf(snapshot.sharedBillingEnabled()), true);
+                                return OK;
+                            })))
+                    .then(literal("create")
+                        .then(argument("spec", StringArgumentType.greedyString())
+                            .executes(c -> {
+                                final String spec = StringArgumentType.getString(c, "spec");
+                                final String[] split = spec.split("\\s+--\\s+", 2);
+                                if (split.length != 2 || split[0].isBlank() || split[1].isBlank()) {
+                                    c.getSource().getEmbed()
+                                        .title("OpenCraft Fleet Run")
+                                        .description("Use: /llm agent run create SUMMARY -- PEER_IDS")
+                                        .errorColor();
+                                    return ERROR;
+                                }
+                                final List<String> peers = parsePeerList(split[1]);
+                                final Optional<FleetRunSnapshot> run = agentNetworkService.createFleetRun(
+                                    commandSourceName(c),
+                                    split[0].strip(),
+                                    peers
+                                );
+                                if (run.isEmpty()) {
+                                    c.getSource().getEmbed()
+                                        .title("OpenCraft Fleet Run")
+                                        .description("Could not create fleet run. This node profile may not coordinate fleet work.")
+                                        .errorColor();
+                                    return ERROR;
+                                }
+                                final FleetRunSnapshot snapshot = run.get();
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft Fleet Run Created")
+                                    .description(renderFleetRun(snapshot))
+                                    .addField("runId", snapshot.runId(), false)
+                                    .addField("targets", String.valueOf(snapshot.targetPeerIds().size()), true)
+                                    .addField("billableUnits", String.valueOf(snapshot.billableRequestUnits()), true);
+                                return OK;
+                            })))
+                    .then(literal("start")
+                        .then(argument("runId", StringArgumentType.word())
+                            .executes(brigadierCommand(c -> mutateRunResponse(
+                                c,
+                                "OpenCraft Fleet Run Started",
+                                agentNetworkService.startFleetRun(StringArgumentType.getString(c, "runId").strip())
+                            )))))
+                    .then(literal("finish")
+                        .then(argument("runId", StringArgumentType.word())
+                            .executes(brigadierCommand(c -> mutateRunResponse(
+                                c,
+                                "OpenCraft Fleet Run Completed",
+                                agentNetworkService.completeFleetRun(StringArgumentType.getString(c, "runId").strip(), "")
+                            )))
+                            .then(argument("detail", StringArgumentType.greedyString())
+                                .executes(brigadierCommand(c -> mutateRunResponse(
+                                    c,
+                                    "OpenCraft Fleet Run Completed",
+                                    agentNetworkService.completeFleetRun(
+                                        StringArgumentType.getString(c, "runId").strip(),
+                                        StringArgumentType.getString(c, "detail").strip()
+                                    )
+                                ))))))
+                    .then(literal("fail")
+                        .then(argument("runId", StringArgumentType.word())
+                            .then(argument("reason", StringArgumentType.greedyString())
+                                .executes(brigadierCommand(c -> mutateRunResponse(
+                                    c,
+                                    "OpenCraft Fleet Run Failed",
+                                    agentNetworkService.failFleetRun(
+                                        StringArgumentType.getString(c, "runId").strip(),
+                                        StringArgumentType.getString(c, "reason").strip()
+                                    )
+                                ))))))
+                    .then(literal("cancel")
+                        .then(argument("runId", StringArgumentType.word())
+                            .executes(brigadierCommand(c -> mutateRunResponse(
+                                c,
+                                "OpenCraft Fleet Run Cancelled",
+                                agentNetworkService.cancelFleetRun(StringArgumentType.getString(c, "runId").strip(), "")
+                            )))
+                            .then(argument("detail", StringArgumentType.greedyString())
+                                .executes(brigadierCommand(c -> mutateRunResponse(
+                                    c,
+                                    "OpenCraft Fleet Run Cancelled",
+                                    agentNetworkService.cancelFleetRun(
+                                        StringArgumentType.getString(c, "runId").strip(),
+                                        StringArgumentType.getString(c, "detail").strip()
+                                    )
+                                ))))))
+                    .then(literal("step")
+                        .then(argument("runId", StringArgumentType.word())
+                            .then(argument("peerId", StringArgumentType.word())
+                                .then(argument("commandId", StringArgumentType.word())
+                                    .then(argument("summary", StringArgumentType.greedyString())
+                                        .executes(brigadierCommand(c -> mutateRunResponse(
+                                            c,
+                                            "OpenCraft Fleet Step Added",
+                                            agentNetworkService.addFleetStep(
+                                                StringArgumentType.getString(c, "runId").strip(),
+                                                StringArgumentType.getString(c, "peerId").strip(),
+                                                StringArgumentType.getString(c, "commandId").strip(),
+                                                StringArgumentType.getString(c, "summary").strip()
+                                            )
+                                        ))))))))
+                    .then(literal("step-status")
+                        .then(argument("runId", StringArgumentType.word())
+                            .then(argument("stepId", StringArgumentType.word())
+                                .then(argument("status", enumStrings(
+                                    "planned", "dispatched", "running", "completed", "failed", "cancelled"
+                                ))
+                                    .then(argument("detail", StringArgumentType.greedyString())
+                                        .executes(brigadierCommand(c -> mutateRunResponse(
+                                            c,
+                                            "OpenCraft Fleet Step Updated",
+                                            agentNetworkService.updateFleetStepStatus(
+                                                StringArgumentType.getString(c, "runId").strip(),
+                                                StringArgumentType.getString(c, "stepId").strip(),
+                                                FleetStepStatus.fromString(StringArgumentType.getString(c, "status")),
+                                                StringArgumentType.getString(c, "detail").strip()
+                                            )
+                                        )))))))))
+                .then(literal("challenge")
+                    .then(argument("peerId", StringArgumentType.word())
+                        .executes(c -> {
+                            final String peerId = StringArgumentType.getString(c, "peerId").strip();
+                            final Optional<AgentChallenge> challenge = agentNetworkService.issueOnboardingChallenge(
+                                peerId,
+                                List.of("handshake", "execute")
+                            );
+                            if (challenge.isEmpty()) {
+                                c.getSource().getEmbed()
+                                    .title("OpenCraft Agent Challenge")
+                                    .description("Could not issue challenge. Check agent mode, nodeId, peer config, and shared secret env var.")
+                                    .errorColor();
+                                return ERROR;
+                            }
+                            final AgentChallenge value = challenge.get();
+                            c.getSource().getEmbed()
+                                .title("OpenCraft Agent Challenge")
+                                .addField("peerId", value.candidatePeerId(), true)
+                                .addField("challengeId", value.challengeId(), false)
+                                .addField("phrase", value.phrase(), false)
+                                .addField("expiresAt", value.expiresAt().toString(), true)
+                                .addField("ttlSeconds", String.valueOf(value.ttlSecondsRemaining(java.time.Clock.systemUTC())), true)
+                                .addField("scopes", String.join(", ", value.scopes()), false);
+                            return OK;
+                        })))
+                .then(literal("billing")
+                    .then(argument("targetCount", IntegerArgumentType.integer(1))
+                        .executes(c -> {
+                            final int targetCount = IntegerArgumentType.getInteger(c, "targetCount");
+                            final FleetTaskEnvelope envelope = agentNetworkService.draftFleetTask(
+                                "management-preview",
+                                java.util.stream.IntStream.rangeClosed(1, targetCount)
+                                    .mapToObj(index -> "peer-" + index)
+                                    .toList()
+                            );
+                            c.getSource().getEmbed()
+                                .title("OpenCraft Agent Billing")
+                                .description("Draft fan-out preview for a single user request.")
+                                .addField("targetCount", String.valueOf(targetCount), true)
+                                .addField("dispatches", String.valueOf(envelope.downstreamDispatchCount()), true)
+                                .addField("billableRequestUnits", String.valueOf(envelope.billableRequestUnits()), true)
+                                .addField("sharedBillingEnabled", String.valueOf(envelope.sharedBillingEnabled()), true)
+                                .addField("fleetRequestId", envelope.fleetRequestId(), false);
+                            return OK;
+                        }))))
             .then(literal("config").executes(c -> {
+                final AgentNetworkStatus agentStatus = agentNetworkService.status();
                 c.getSource().getEmbed()
                     .title("OpenCraft Config")
                     .addField("prefix",              config.prefix,                                     true)
                     .addField("publicChatEnabled",   String.valueOf(config.publicChatEnabled),          true)
                     .addField("whisperEnabled",      String.valueOf(config.whisperEnabled),             true)
+                    .addField("profile",             config.profile,                                    true)
                     .addField("model",               config.model,                                      true)
                     .addField("providerName",        config.providerName,                               true)
                     .addField("providerBaseUrl",     config.providerBaseUrl,                            false)
@@ -374,7 +650,16 @@ public class OpenCraftCommand extends Command {
                     .addField("allowedCommands",     config.allowedCommands.size() + " entries",        true)
                     .addField("discordAuditEnabled", String.valueOf(config.discordAuditEnabled),        true)
                     .addField("discordDebugEnabled", String.valueOf(config.discordDebugEnabled),        true)
-                    .addField("users",               config.users.size() + " entries",                  true);
+                    .addField("users",               config.users.size() + " entries",                  true)
+                    .addField("agent.enabled",       String.valueOf(config.agent.enabled),              true)
+                    .addField("agent.nodeId",        blankAs(config.agent.nodeId, "(unset)"),          true)
+                    .addField("agent.cluster",       config.agent.cluster,                              true)
+                    .addField("agent.port",          String.valueOf(config.agent.port),                 true)
+                    .addField("agent.peers",         String.valueOf(agentStatus.configuredPeers()),     true)
+                    .addField("agent.maxRuns",       String.valueOf(config.agent.maxRetainedRuns),     true)
+                    .addField("agent.canCoordinate", String.valueOf(agentNetworkService.canCoordinateFleet()), true)
+                    .addField("agent.canAccept",     String.valueOf(agentNetworkService.canAcceptFleetTasks()), true)
+                    .addField("agent.sharedBilling", String.valueOf(config.agent.shareBillingAcrossPeers), true);
                 return OK;
             }));
     }
@@ -497,6 +782,118 @@ public class OpenCraftCommand extends Command {
             if (!valid) return false;
         }
         return true;
+    }
+
+    private String renderAgentPeers() {
+        final List<com.zenith.plugin.opencraft.agent.AgentPeer> peers = agentNetworkService.peers();
+        if (peers.isEmpty()) {
+            return "No agent peers configured.";
+        }
+        final StringBuilder builder = new StringBuilder();
+        for (final com.zenith.plugin.opencraft.agent.AgentPeer peer : peers) {
+            if (builder.length() > 0) builder.append('\n');
+            builder.append(peer.peerId())
+                .append(" -> ")
+                .append(peer.endpoint())
+                .append(" / role=")
+                .append(blankAs(peer.role(), "worker"))
+                .append(" / enabled=")
+                .append(peer.enabled())
+                .append(" / execute=")
+                .append(peer.allowTaskExecution());
+        }
+        return builder.toString();
+    }
+
+    private String renderFleetRunList() {
+        final List<FleetRunSnapshot> runs = agentNetworkService.recentFleetRuns(10);
+        if (runs.isEmpty()) {
+            return "No fleet runs recorded.";
+        }
+        final StringBuilder builder = new StringBuilder();
+        for (final FleetRunSnapshot run : runs) {
+            if (builder.length() > 0) builder.append('\n');
+            builder.append(run.compactSummary())
+                .append(" / ")
+                .append(run.requestSummary());
+        }
+        return builder.toString();
+    }
+
+    private String renderFleetRun(final FleetRunSnapshot run) {
+        final StringBuilder builder = new StringBuilder();
+        builder.append(run.requestSummary())
+            .append("\nTargets: ")
+            .append(String.join(", ", run.targetPeerIds()))
+            .append("\nSteps:");
+        if (run.steps().isEmpty()) {
+            builder.append(" none");
+        } else {
+            for (final FleetStepSnapshot step : run.steps()) {
+                builder.append("\n- ").append(step.compactSummary());
+                if (step.detail() != null && !step.detail().isBlank()) {
+                    builder.append(" / ").append(step.detail());
+                }
+            }
+        }
+        builder.append("\nRecent events:");
+        final List<com.zenith.plugin.opencraft.agent.FleetRunEvent> events = run.events();
+        if (events.isEmpty()) {
+            builder.append(" none");
+        } else {
+            final int start = Math.max(0, events.size() - 5);
+            for (int index = start; index < events.size(); index++) {
+                final com.zenith.plugin.opencraft.agent.FleetRunEvent event = events.get(index);
+                builder.append("\n- ").append(event.type()).append(": ").append(event.message());
+            }
+        }
+        return builder.toString();
+    }
+
+    private int mutateRunResponse(final com.mojang.brigadier.context.CommandContext<CommandContext> context,
+                                  final String title,
+                                  final Optional<FleetRunSnapshot> runOpt) {
+        if (runOpt.isEmpty()) {
+            context.getSource().getEmbed()
+                .title(title)
+                .description("Unable to update fleet run.")
+                .errorColor();
+            return ERROR;
+        }
+        final FleetRunSnapshot run = runOpt.get();
+        context.getSource().getEmbed()
+            .title(title)
+            .description(renderFleetRun(run))
+            .addField("runId", run.runId(), false)
+            .addField("status", run.status().configValue(), true)
+            .addField("steps", String.valueOf(run.steps().size()), true);
+        return OK;
+    }
+
+    private static com.mojang.brigadier.Command<CommandContext> brigadierCommand(
+        final ToIntFunction<com.mojang.brigadier.context.CommandContext<CommandContext>> handler
+    ) {
+        return handler::applyAsInt;
+    }
+
+    private static String commandSourceName(final com.mojang.brigadier.context.CommandContext<CommandContext> context) {
+        if (context == null || context.getSource() == null || context.getSource().getSource() == null) {
+            return "unknown";
+        }
+        return context.getSource().getSource().name();
+    }
+
+    private static List<String> parsePeerList(final String raw) {
+        if (raw == null || raw.isBlank()) return List.of();
+        return java.util.Arrays.stream(raw.split("[,\\s]+"))
+            .map(String::strip)
+            .filter(value -> !value.isBlank())
+            .distinct()
+            .toList();
+    }
+
+    private static String blankAs(final String value, final String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private String findExistingUserKey(final String rawKey) {

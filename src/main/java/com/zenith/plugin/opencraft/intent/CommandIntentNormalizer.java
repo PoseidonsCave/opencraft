@@ -16,7 +16,10 @@ public final class CommandIntentNormalizer {
     );
     private static final Pattern BLOCKS_PATTERN = Pattern.compile("(\\d+)\\s*blocks?", Pattern.CASE_INSENSITIVE);
     private static final Pattern DIRECTION_PATTERN = Pattern.compile(
-        "(north|south|east|west|[+-]x|[+-]z|negx|negz|posx|posz|negativex|negativez|positivex|positivez)",
+        "(?:(?<![A-Za-z])(?:north|south|east|west|negx|negz|posx|posz|negativex|negativez|positivex|positivez)(?![A-Za-z])"
+            + "|(?<![A-Za-z0-9])[+-][xz](?![A-Za-z0-9])"
+            + "|(?<![A-Za-z0-9])[xz][+-](?![A-Za-z0-9])"
+            + "|(?<![A-Za-z0-9])[xz](?![A-Za-z0-9]))",
         Pattern.CASE_INSENSITIVE
     );
 
@@ -132,6 +135,6 @@ public final class CommandIntentNormalizer {
     private static @Nullable String findDirection(final String text) {
         if (text == null || text.isBlank()) return null;
         final Matcher matcher = DIRECTION_PATTERN.matcher(text);
-        return matcher.find() ? matcher.group(1).toLowerCase(Locale.ROOT) : null;
+        return matcher.find() ? matcher.group().toLowerCase(Locale.ROOT) : null;
     }
 }
