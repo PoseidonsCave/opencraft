@@ -20,6 +20,8 @@ The plugin is designed to be useful without being reckless: player access is all
 - Local audit logging with automatic rotation and retention
 - Optional Discord audit notifications through ZenithProxy's Discord integration
 - Optional GitHub release update checks with SHA-256 verification before staging
+- Draft fleet orchestration primitives with `manager` / `agent` / `hybrid` node profiles
+- Shared-billing fleet envelopes and retained fleet run history for multi-bot planning
 
 ---
 
@@ -97,6 +99,43 @@ The fields you'll touch most often:
 |---|---|---|
 | `operationsEnabled` | `false` | Allow the model to propose and run multi-step plans |
 | `baselineOperationsEnabled` | `true` | Expose built-in admin actions like `status`, `pathfinder` movement, current-position patrol scheduling, recurring `tasks`, and `antiAFK` controls |
+
+### Fleet / agent mode
+
+| Key | Default | Description |
+|---|---|---|
+| `profile` | `"manager"` | Node orchestration role: `manager`, `agent`, or `hybrid` |
+| `agent.enabled` | `false` | Turn on the local fleet-management scaffold |
+| `agent.nodeId` | `""` | Stable node identifier used in challenges and fleet runs |
+| `agent.cluster` | `"default"` | Logical cluster name for grouped deployments |
+| `agent.bindHost` | `"0.0.0.0"` | Reserved for a future transport; no listener is opened today |
+| `agent.port` | `38265` | Reserved for a future transport; clamped to [1, 65535] |
+| `agent.sharedSecretEnvVar` | `"OPENCRAFT_AGENT_SECRET"` | **Name** of the env var holding the fleet secret |
+| `agent.challengeTtlSeconds` | `120` | Challenge-phrase validity window (clamped to >= 15) |
+| `agent.allowedClockSkewSeconds` | `30` | Allowed peer clock skew during verification |
+| `agent.shareBillingAcrossPeers` | `true` | Collapse one fanout request into one billable orchestration unit |
+| `agent.maxRetainedRuns` | `100` | In-memory cap for retained fleet runs (clamped to >= 10) |
+
+Each `agent.peers` entry defines a known peer:
+
+```json
+{
+  "peerId": "bot2",
+  "displayName": "Bot 2",
+  "host": "10.0.0.2",
+  "port": 38265,
+  "role": "worker",
+  "enabled": true,
+  "allowTaskExecution": true
+}
+```
+
+Current security behavior:
+
+- Fleet runs may target only configured peers that are both `enabled` and `allowTaskExecution: true`.
+- Fleet steps may target only peers already attached to the run.
+- Terminal fleet runs cannot be mutated further.
+- The current implementation is a local orchestration scaffold only. It does **not** open an agent listener or expose a remote API yet.
 
 ### Provider
 
@@ -242,6 +281,19 @@ In short: players use `!oc ...` in chat, while the proxy owner manages OpenCraft
 | `/llm allow remove COMMAND_ID` | account owner | Remove a persisted allowlist entry immediately |
 | `/llm enable` | account owner | Enable the module |
 | `/llm disable` | account owner | Disable the module |
+| `/llm profile` / `profile manager\|agent\|hybrid` | account owner | Inspect or change the local node orchestration role |
+| `/llm agent status` | account owner | Show non-sensitive fleet status, peer count, and challenge-secret fingerprint |
+| `/llm agent challenge PEER_ID` | account owner | Create a short-lived onboarding challenge phrase for a configured peer |
+| `/llm agent billing TARGET_COUNT` | account owner | Preview shared-billing fanout math |
+| `/llm agent run list` | account owner | Show recent retained fleet runs |
+| `/llm agent run show RUN_ID` | account owner | Inspect one retained fleet run and its recent events |
+| `/llm agent run create SUMMARY -- PEER_IDS` | account owner | Create a draft fleet run for configured actionable peers |
+| `/llm agent run start RUN_ID` | account owner | Mark a draft fleet run active |
+| `/llm agent run finish RUN_ID [DETAIL]` | account owner | Complete a fleet run |
+| `/llm agent run fail RUN_ID REASON` | account owner | Fail a fleet run |
+| `/llm agent run cancel RUN_ID [DETAIL]` | account owner | Cancel a fleet run |
+| `/llm agent run step RUN_ID PEER_ID COMMAND_ID SUMMARY` | account owner | Add a peer-scoped step to a fleet run |
+| `/llm agent run step-status RUN_ID STEP_ID STATUS DETAIL` | account owner | Update a fleet step state |
 | `/llm update` / `update check` | account owner | Check GitHub for a newer release |
 | `/llm update stage` | account owner | Download + SHA-256 verify + stage (restart to apply) |
 | `/llm audit prune` | account owner | No-op kept for compatibility (logback handles retention) |
@@ -330,11 +382,14 @@ This is defense in depth. The Java RBAC is the actual enforcement layer; the pro
 ## Security Notes
 
 - API keys live only in environment variables and never in the config file, the audit log, the prompt, or Discord embeds.
+- Fleet shared secrets live only in environment variables and are surfaced only as a short fingerprint in `/llm agent status`.
 - All LLM-supplied argument values are validated against the per-command JSON schema and a strict character set before being interpolated into the proxy command.
 - Admin role is never granted by username alone; a confirmed UUID is always required.
 - Whispers go out as a typed `ServerboundChatPacket` built by ZenithProxy's `ChatUtil`, not via string concatenation into a `/msg` slash command.
 - Audit log rotation, compression, and retention are owned by logback (`SizeAndTimeBasedRollingPolicy`), not by ad-hoc file pruning.
 - Auto-downloaded JARs are SHA-256 verified against a CI-generated checksum before staging.
+- Fleet runs are restricted to configured actionable peers, and completed/failed/cancelled runs are immutable.
+- Agent mode is not a network transport yet. No listener or remote endpoint is opened by the current implementation.
 
 ---
 

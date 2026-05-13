@@ -250,7 +250,7 @@ public final class ChatHandler {
         if (parsed instanceof CommandIntentResponse commandIntent) {
             debug(requestId, "response.command", commandIntent.intent().commandId());
             final ExecutionResult result =
-                commandExecutor.execute(commandIntent.intent(), identity, requestId);
+                commandExecutor.execute(commandIntent.intent(), identity, requestId, userInput);
             respond(identity.username(), result.message(), sourceType);
             return;
         }

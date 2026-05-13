@@ -87,6 +87,8 @@ public final class PromptBuilder {
           {"type": "command_intent", "command_id": "COMMAND_ID", "arguments": {"ARG":"VALUE"}, "explanation": "BRIEF_REASON"}
             Use ONLY for single immediate actions explicitly listed in the approved commands.
             command_id MUST be taken verbatim from the approved list. Never invent ids.
+            Never substitute plain-language aliases like "walk" or "move" for a
+            real approved command_id.
 
           {"type": "refusal", "reason": "BRIEF_REASON"}
             Use when the request asks you to violate the security rules above, bypass

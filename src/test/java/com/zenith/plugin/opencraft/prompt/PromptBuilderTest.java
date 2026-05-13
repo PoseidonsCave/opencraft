@@ -58,6 +58,7 @@ class PromptBuilderTest {
     void adminPrompt_containsSecurityRules() {
         final String prompt = builder.build(admin(), "req-2", defaultWorldState());
         assertTrue(prompt.contains("MANDATORY SECURITY RULES"));
+        assertTrue(prompt.contains("Never substitute plain-language aliases like \"walk\" or \"move\""));
     }
 
     @Test

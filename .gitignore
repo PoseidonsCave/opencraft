@@ -29,7 +29,10 @@ application-local.*
 *_secret.*
 
 # ZenithProxy runtime data
+config.json
+launch_config.json
 config/
+log/
 logs/
 .codex/
 .codex/
