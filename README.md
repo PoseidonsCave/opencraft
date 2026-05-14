@@ -448,4 +448,4 @@ For security vulnerabilities, please disclose to PoseidonsCave on Discord rather
 
 ## License
 
-This project is licensed under the Apache License 2.0. See [LICENSE](LICENSE) for details.
+This project is licensed under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE) for details.
