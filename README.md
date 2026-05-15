@@ -6,6 +6,7 @@ The plugin is designed to be useful without being reckless: player access is all
 
 ![Build](https://github.com/PoseidonsCave/opencraft/actions/workflows/build.yml/badge.svg)
 ![Downloads](https://img.shields.io/github/downloads/PoseidonsCave/opencraft/total.svg)
+
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/6v5greuSp)
 ---
 
