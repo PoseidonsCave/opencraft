@@ -196,6 +196,38 @@ class CommandExecutorTest {
     }
 
     @Test
+    void baselineGoto_executesThroughInternalMovementService() {
+        when(cardinalMovementService.gotoXz("req-12", admin(), 100, -200))
+            .thenReturn("Navigating to x=100, z=-200.");
+
+        final ExecutionResult result = executor.execute(
+            new CommandIntent("pathfinder.goto.xz", Map.of("x", "100", "z", "-200"), "go there"),
+            admin(),
+            "req-12"
+        );
+
+        assertEquals(ExecutionResult.Status.SUCCESS, result.status());
+        assertTrue(result.message().contains("Navigating to x=100, z=-200."));
+        verify(cardinalMovementService).gotoXz("req-12", admin(), 100, -200);
+    }
+
+    @Test
+    void baselineThisWay_executesThroughInternalMovementService() {
+        when(cardinalMovementService.moveThisWay("req-13", admin(), 7))
+            .thenReturn("Moving 7 block(s) in the current facing direction.");
+
+        final ExecutionResult result = executor.execute(
+            new CommandIntent("pathfinder.thisway", Map.of("blocks", "7"), "walk forward"),
+            admin(),
+            "req-13"
+        );
+
+        assertEquals(ExecutionResult.Status.SUCCESS, result.status());
+        assertTrue(result.message().contains("Moving 7 block(s)"));
+        verify(cardinalMovementService).moveThisWay("req-13", admin(), 7);
+    }
+
+    @Test
     void scheduledTask_hasUsefulSuccessMessage() {
         final CommandIntent intent = new CommandIntent(
             "tasks.interval.pathfinder.thisway",

@@ -186,6 +186,31 @@ public final class CommandExecutor {
                                    final UserIdentity identity,
                                    final String requestId) {
         return switch (commandId) {
+            case "pathfinder.status" ->
+                cardinalMovementService.status();
+            case "pathfinder.stop" ->
+                cardinalMovementService.stop();
+            case "pathfinder.goto.xz" ->
+                cardinalMovementService.gotoXz(
+                    requestId,
+                    identity,
+                    Integer.parseInt(args.get("x").strip()),
+                    Integer.parseInt(args.get("z").strip())
+                );
+            case "pathfinder.goto.xyz" ->
+                cardinalMovementService.gotoXyz(
+                    requestId,
+                    identity,
+                    Integer.parseInt(args.get("x").strip()),
+                    Integer.parseInt(args.get("y").strip()),
+                    Integer.parseInt(args.get("z").strip())
+                );
+            case "pathfinder.thisway" ->
+                cardinalMovementService.moveThisWay(
+                    requestId,
+                    identity,
+                    Integer.parseInt(args.get("blocks").strip())
+                );
             case "pathfinder.cardinal" ->
                 cardinalMovementService.moveFromCurrent(
                     requestId,
@@ -193,6 +218,23 @@ public final class CommandExecutor {
                     args.get("direction").strip(),
                     Integer.parseInt(args.get("blocks").strip())
                 );
+            case "pathfinder.near" ->
+                cardinalMovementService.near(
+                    requestId,
+                    identity,
+                    Integer.parseInt(args.get("x").strip()),
+                    Integer.parseInt(args.get("y").strip()),
+                    Integer.parseInt(args.get("z").strip()),
+                    Integer.parseInt(args.get("rangeSq").strip())
+                );
+            case "pathfinder.follow" ->
+                cardinalMovementService.followPlayer(
+                    requestId,
+                    identity,
+                    args.get("player").strip()
+                );
+            case "pathfinder.pickup" ->
+                cardinalMovementService.pickup(requestId, identity);
             case "patrol.once.current" ->
                 patrolService.patrolOnceCurrent(requestId, identity,
                     Integer.parseInt(args.get("radius").strip()));
