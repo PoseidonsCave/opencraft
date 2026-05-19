@@ -16,35 +16,35 @@ public final class BaselineOperations {
             define(
                 "pathfinder.status",
                 "Check current pathfinder navigation status and active goal",
-                "pathfinder status",
+                "@internal:pathfinder.status",
                 "admin", "low", false,
                 Map.of()
             ),
             define(
                 "pathfinder.stop",
                 "Stop any active pathfinder navigation immediately",
-                "pathfinder stop",
+                "@internal:pathfinder.stop",
                 "admin", "low", false,
                 Map.of()
             ),
             define(
                 "pathfinder.goto.xz",
                 "Navigate to X,Z coordinates (Y determined automatically)",
-                "pathfinder goto {x} {z}",
+                "@internal:pathfinder.goto.xz {x} {z}",
                 "admin", "medium", false,
                 Map.of("x", "integer", "z", "integer")
             ),
             define(
                 "pathfinder.goto.xyz",
                 "Navigate to exact X,Y,Z coordinates",
-                "pathfinder goto {x} {y} {z}",
+                "@internal:pathfinder.goto.xyz {x} {y} {z}",
                 "admin", "medium", false,
                 Map.of("x", "integer", "y", "integer", "z", "integer")
             ),
             define(
                 "pathfinder.thisway",
                 "Move N blocks in the current facing direction",
-                "pathfinder thisway {blocks}",
+                "@internal:pathfinder.thisway {blocks}",
                 "admin", "medium", false,
                 Map.of("blocks", "integer")
             ),
@@ -58,21 +58,21 @@ public final class BaselineOperations {
             define(
                 "pathfinder.near",
                 "Navigate to anywhere within a radius of the target X,Y,Z position",
-                "pathfinder near {x} {y} {z} {rangeSq}",
+                "@internal:pathfinder.near {x} {y} {z} {rangeSq}",
                 "admin", "medium", false,
                 Map.of("x", "integer", "y", "integer", "z", "integer", "rangeSq", "integer")
             ),
             define(
                 "pathfinder.follow",
                 "Follow a player by name (stops when command is cancelled)",
-                "pathfinder follow {player}",
+                "@internal:pathfinder.follow {player}",
                 "admin", "medium", false,
                 Map.of("player", "string")
             ),
             define(
                 "pathfinder.pickup",
                 "Navigate toward and pick up all nearby items on the ground",
-                "pathfinder pickup",
+                "@internal:pathfinder.pickup",
                 "admin", "low", false,
                 Map.of()
             ),
